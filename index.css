@@ -18,3 +18,11 @@ canvas {
   width: 750px;
   height: 750px;
 }
+
+img[src*="White_Pawn"] {
+  width: 500px;
+}
+
+img[src*="Black_Pawn"] {
+  margin: auto;
+}
