@@ -1,5 +1,6 @@
 /*
   TODO
+  0. IMPLEMENT: En-passant
   1. IMPLEMENT: Checkmate stuff
   2. IMEPLEMENT: Highlight king with red when in check
   3. IMPLEMENT: Displays for turn number and move history
@@ -208,18 +209,28 @@ function kingMoveCheck(legalMoves, prevCoor) {
   return kingLegalMoves
 }
 
-// Finds information regarding check
-function checkHandler(prevCoor, legalMoves, allyColor) {
-
+// Returns list of pieces (coordinates) that are putting king in check
+function getCheckPieces(kingLoc, kingLegalMoves, enemyColor) {
+  let checkPieces = []
+  for(const [coordinate, piece] of pieceMap.entries()) {
+    if(piece.src.includes(enemyColor)) {
+      if(getLegalMoves(piece).includes(kingLoc)) {
+        checkPieces.push(coordinate)
+      }
+    }
+  }
+  return checkPieces
 }
 
 // King cannot move. Finds if player can move any other piece
-function checkMateHandler(prevCoor, legalMoves, allyColor) {
+function checkMateHandler(kingLoc, kingLegalMoves, allyColor) {
+  let allyKing = (allyColor == "White") ? "White_King" : "Black_King"
+  let enemyColor = (allyColor == "White") ? "White" : "Black"
   for(const [coordinate, piece] of pieceMap.entries()) {
-    if(piece.src.includes(allyColor)) {
-      // Get legal moves of all ally pieces (except King)
-      // Get state of board after ally piece makes move.
-      // If check still exists, then invalid move.
+    if(piece.src.includes(allyColor) && !piece.src.includes(allyKing)) {
+      let pieceLegalMoves = getLegalMoves(piece)
+      let checkPieces = getCheckPieces(kingLoc, kingLegalMoves, enemyColor)
+      // Check if piece doing legal move makes king able to move
 
       // If after iterating through all, no move can be found, checkmate.
     }
@@ -595,9 +606,7 @@ function getLegalMoves(prevCoor, bypassTurnNum) {
 
 // Handles piece moving logic
 function moveHandler() {
-  let secondClick = false
-  let prevCoor = ""
-  let legalMoves = []
+  let secondClick = false, prevCoor = "", legalMoves = []
   // Watch for clicks on coordinates
   canvas.addEventListener('click', function(event) {
     let x = event.pageX - canvas.offsetLeft + canvas.clientLeft
@@ -634,16 +643,13 @@ function moveHandler() {
             pieceMap.delete("00")
           }
         }
+        turnNum += 1
+        secondClick = false, castling = false, prevCoor = ""
         ctx.clearRect(0, 0, canvas.width, canvas.height)
         drawBoard([])
-        turnNum += 1
-        secondClick = false
-        prevCoor = ""
-        castling = false
       } else {
         // Display legal moves
-        secondClick = true
-        prevCoor = currCoor
+        secondClick = true, prevCoor = currCoor
         legalMoves = getLegalMoves(prevCoor, false)
         ctx.clearRect(0, 0, canvas.width, canvas.height)
         drawBoard(legalMoves)
