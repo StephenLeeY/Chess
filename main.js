@@ -1,12 +1,10 @@
 /*
   TODO
-  1. FIX: kingMoveCheck not detecting illegal moves for non-pawn pieces
-  2. IMPLEMENT: Checkmate stuff
-  3. IMPLEMENT: Highlight tile with red when invalid move
-  4. IMEPLEMENT: Highlight king with red when in check
-  5. IMPLEMENT: Displays for turn number and move history
-  6. IMEPLEMENT: Basic random computer AI
-  7. IMPLEMENT: Computer AI w/ min-max alpha-beta.
+  1. IMPLEMENT: Checkmate stuff
+  2. IMEPLEMENT: Highlight king with red when in check
+  3. IMPLEMENT: Displays for turn number and move history
+  4. IMEPLEMENT: Basic random computer AI
+  5. IMPLEMENT: Computer AI w/ min-max alpha-beta.
 */
 
 var canvas = document.getElementById('myCanvas')
@@ -21,6 +19,7 @@ var size = 937.5 // (Size of canvas (CSS) * scale) / Number of columns (8)
 var pieceMap = new Map() // Stores piece locations
 var turnNum = 1
 var moveHistory = new Map()
+var castling = false
 
 // Draws a single square in chess bord
 function drawSquare(i, j, lightColor, darkColor) {
@@ -199,13 +198,32 @@ function kingMoveCheck(legalMoves, prevCoor) {
           }
           return ele
         })
+      } else {
+        // Filter out illegal moves caused by everything else
+        let legalCheck = getLegalMoves(coordinate, true)
+        kingLegalMoves = kingLegalMoves.filter(ele => !legalCheck.includes(ele))
       }
-      // Filter out illegal moves caused by everything else
-      let legalCheck = getLegalMoves(coordinate)
-      kingLegalMoves = kingLegalMoves.filter(ele => !legalCheck.includes(ele))
     }
   }
   return kingLegalMoves
+}
+
+// Finds information regarding check
+function checkHandler(prevCoor, legalMoves, allyColor) {
+
+}
+
+// King cannot move. Finds if player can move any other piece
+function checkMateHandler(prevCoor, legalMoves, allyColor) {
+  for(const [coordinate, piece] of pieceMap.entries()) {
+    if(piece.src.includes(allyColor)) {
+      // Get legal moves of all ally pieces (except King)
+      // Get state of board after ally piece makes move.
+      // If check still exists, then invalid move.
+
+      // If after iterating through all, no move can be found, checkmate.
+    }
+  }
 }
 
 // Handles bishop piece logic
@@ -341,16 +359,22 @@ function rookHandler(prevCoor, legalMoves, enemyColor) {
 }
 
 // Returns legal moves given a coordinate of a piece
-function getLegalMoves(prevCoor) {
+function getLegalMoves(prevCoor, bypassTurnNum) {
   let currPiece = pieceMap.get(prevCoor)
   let validMove = false
   let legalMoves = []
 
-  // Check that right player is making moves
-  if(currPiece.src.includes("White") && (turnNum % 2 == 0)) {
+  // Check for invalid move
+  if(!pieceMap.has(prevCoor)) {
+    // Invalid move handler
     return legalMoves
   }
-  if(currPiece.src.includes("Black") && (turnNum % 2 != 0)) {
+
+  // Check that right player is making moves
+  if(!bypassTurnNum && currPiece.src.includes("White") && (turnNum % 2 == 0)) {
+    return legalMoves
+  }
+  if(!bypassTurnNum && currPiece.src.includes("Black") && (turnNum % 2 != 0)) {
     return legalMoves
   }
 
@@ -377,22 +401,26 @@ function getLegalMoves(prevCoor) {
     if(!moveHistory.has("White_King")) {
       let rightCastleAvail = true
       let leftCastleAvail = true
-      for(rookMoves in moveHistory.get("White_Rook")) {
-        if(rookMoves.split(",")[0] == "77") {
-          rightCastleAvail = false
-        }
-        if(rookMoves.split(",")[0] == "70") {
-          leftCastleAvail = false
-        }
-        if(!rightCastleAvail && !leftCastleAvail) {
-          break castle
+      if(moveHistory.has("White_Rook")) {
+        for(rookMoves of moveHistory.get("White_Rook")) {
+          if(rookMoves.split(",")[0] == "77") {
+            rightCastleAvail = false
+          }
+          if(rookMoves.split(",")[0] == "70") {
+            leftCastleAvail = false
+          }
+          if(!rightCastleAvail && !leftCastleAvail) {
+            break castle
+          }
         }
       }
       if(rightCastleAvail && !pieceMap.has("76") && !pieceMap.has("75")) {
-        legalMoves.push("C76")
+        legalMoves.push("76")
+        castling = true
       }
       if(leftCastleAvail && !pieceMap.has("71") && !pieceMap.has("72") && !pieceMap.has("73")) {
-        legalMoves.push("C71")
+        legalMoves.push("72")
+        castling = true
       }
     }
     // Top Left
@@ -438,8 +466,13 @@ function getLegalMoves(prevCoor) {
     // Remove all out of index legal moves
     legalMoves = legalMoves.filter(move => (move[0] <= 7 &&
       move[0] >= 0 && move[1] <= 7 && move[1] >= 0))
-    // Remove all illegla moves
+    // Remove all illegal moves
     legalMoves = kingMoveCheck(legalMoves, prevCoor)
+
+    // Check for checkmate
+    if(legalMoves.length == 0) {
+      checkMateHandler(prevCoor, legalMoves, "White")
+    }
     return legalMoves
   } else if (currPiece.src.includes("White_Queen")) {
     return bishopHandler(prevCoor, legalMoves, "Black")
@@ -472,22 +505,26 @@ function getLegalMoves(prevCoor) {
     if(!moveHistory.has("Black_King")) {
       let rightCastleAvail = true
       let leftCastleAvail = true
-      for(rookMoves in moveHistory.get("Black_Rook")) {
-        if(rookMoves.split(",")[0] == "07") {
-          rightCastleAvail = false
-        }
-        if(rookMoves.split(",")[0] == "00") {
-          leftCastleAvail = false
-        }
-        if(!rightCastleAvail && !leftCastleAvail) {
-          break castle
+      if(moveHistory.has("Black_Rook")) {
+        for(rookMoves of moveHistory.get("Black_Rook")) {
+          if(rookMoves.split(",")[0] == "07") {
+            rightCastleAvail = false
+          }
+          if(rookMoves.split(",")[0] == "00") {
+            leftCastleAvail = false
+          }
+          if(!rightCastleAvail && !leftCastleAvail) {
+            break castle
+          }
         }
       }
       if(rightCastleAvail && !pieceMap.has("06") && !pieceMap.has("05")) {
-        legalMoves.push("C06")
+        legalMoves.push("06")
+        castling = true
       }
       if(leftCastleAvail && !pieceMap.has("01") && !pieceMap.has("02") && !pieceMap.has("03")) {
-        legalMoves.push("C01")
+        legalMoves.push("02")
+        castling = true
       }
     }
     // Top Left
@@ -533,8 +570,14 @@ function getLegalMoves(prevCoor) {
     // Remove all out of index legal moves
     legalMoves = legalMoves.filter(move => (move[0] <= 7 &&
       move[0] >= 0 && move[1] <= 7 && move[1] >= 0))
-    // Remove all illegla moves
+    // Remove all illegal moves
     legalMoves = kingMoveCheck(legalMoves, prevCoor)
+
+    // Check for checkmate
+    if(legalMoves.length == 0) {
+      checkMateHandler(prevCoor, legalMoves, "Black")
+    }
+
     return legalMoves
   } else if (currPiece.src.includes("Black_Queen")) {
     return bishopHandler(prevCoor, legalMoves, "White")
@@ -550,9 +593,8 @@ function getLegalMoves(prevCoor) {
   }
 }
 
-function main() {
-  initBoard()
-
+// Handles piece moving logic
+function moveHandler() {
   let secondClick = false
   let prevCoor = ""
   let legalMoves = []
@@ -563,40 +605,56 @@ function main() {
     // Converts x-y coordinates to grid coordinates (to-scale)
     let currCoor = Math.floor(y / size * 10).toString() + Math.floor(x / size * 10)
 
-    // Moves piece from a to b
+    // If piece is clicked or clicking after piece is clicked
     if((pieceMap.has(currCoor) && !secondClick) || secondClick) {
-      if(secondClick) {
-        if(legalMoves.includes(currCoor)) {
-          let splitSrc = pieceMap.get(prevCoor).src.split("/")
-          let pieceName = splitSrc[splitSrc.length - 1].split(".")[0]
-          if(moveHistory.has(pieceName)) {
-            moveHistory.get(pieceName).push(prevCoor + ',' + currCoor)
-          } else {
-            moveHistory.set(pieceName, [prevCoor + "," + currCoor])
-          }
-          pieceMap.set(currCoor, pieceMap.get(prevCoor))
-          pieceMap.delete(prevCoor)
-          ctx.clearRect(0, 0, canvas.width, canvas.height)
-          drawBoard([])
-          turnNum += 1
-          secondClick = false
-          prevCoor = ""
+      // If clicking after piece is clicked and move is legal
+      if(secondClick && legalMoves.includes(currCoor)) {
+        let splitSrc = pieceMap.get(prevCoor).src.split("/")
+        let pieceName = splitSrc[splitSrc.length - 1].split(".")[0]
+        if(moveHistory.has(pieceName)) {
+          moveHistory.get(pieceName).push(prevCoor + ',' + currCoor)
         } else {
-          // Consider highlighting selected piece in red
-          secondClick = false
-          prevCoor = ""
-          ctx.clearRect(0, 0, canvas.width, canvas.height)
-          drawBoard([])
+          moveHistory.set(pieceName, [prevCoor + "," + currCoor])
         }
+        pieceMap.set(currCoor, pieceMap.get(prevCoor))
+        pieceMap.delete(prevCoor)
+        // Castling
+        if(castling) {
+          if(currCoor == "76") {
+            pieceMap.set("75", pieceMap.get("77"))
+            pieceMap.delete("77")
+          } else if(currCoor == "72") {
+            pieceMap.set("73", pieceMap.get("70"))
+            pieceMap.delete("70")
+          } else if(currCoor == "06") {
+            pieceMap.set("05", pieceMap.get("07"))
+            pieceMap.delete("07")
+          } else if(currCoor == "02") {
+            pieceMap.set("03", pieceMap.get("00"))
+            pieceMap.delete("00")
+          }
+        }
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        drawBoard([])
+        turnNum += 1
+        secondClick = false
+        prevCoor = ""
+        castling = false
       } else {
+        // Display legal moves
         secondClick = true
         prevCoor = currCoor
-        legalMoves = getLegalMoves(prevCoor)
+        legalMoves = getLegalMoves(prevCoor, false)
         ctx.clearRect(0, 0, canvas.width, canvas.height)
         drawBoard(legalMoves)
       }
     }
   }, false);
+}
+
+function main() {
+  initBoard()
+  moveHandler()
 }
 
 main()

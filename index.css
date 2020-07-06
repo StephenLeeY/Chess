@@ -1,5 +1,5 @@
 html {
-  background: #A8865D
+  background: #312e2b
 }
 
 style {
@@ -19,10 +19,12 @@ canvas {
   height: 750px;
 }
 
-img[src*="White_Pawn"] {
-  width: 500px;
-}
-
-img[src*="Black_Pawn"] {
-  margin: auto;
+.InfoBox {
+  background: #ffffff;
+  border: 5px solid #f1f1f1;
+  width: 600px;
+  height: 750px;
+  position: absolute;
+  left: 57em;
+  top: 1.6em;
 }
