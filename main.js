@@ -1,7 +1,7 @@
 /*
   TODO
   1. enemy_king_moves & en_passant implementation is a bit messy.
-  2.
+  2. TODO: Promotion
 */
 
 var canvas = document.getElementById('myCanvas')
@@ -50,6 +50,53 @@ class Board {
     }
     copy.pieces = copy_pieces
     return copy
+  }
+
+  // Detects checkmate
+  checkmateHandler() {
+    // Find king
+    let ally_color = (this.turn_number % 2 != 0) ? "White" : "Black"
+    let enemy_color = (ally_color === "White") ? "Black" : "White"
+    let king = ""
+    for(let [piece, image] of this.pieces) {
+      if(piece.piece_name === ally_color + "_King") {
+        king = piece
+      }
+    }
+    if(king.getLegalMoves(this, false).length !== 0) {
+      return false
+    }
+    // See if any ally move results in getting out of check
+    for(let [piece, image] of this.pieces) {
+      if(piece.color === king.color && !piece.piece_name.includes("King")) {
+        let piece_moves = piece.getLegalMoves(this, false)
+        valid_move:
+        for(let move of piece_moves) {
+          let future_board = this.deepCopy()
+          future_board.updateMoveHistory(piece.coordinate, move)
+          future_board.updatePieces(piece.coordinate, move)
+          future_board.turn_number += 1
+
+          if(king.getCheckingPieces(future_board, king.coordinate).length !== 0) {
+            continue valid_move
+          } else {
+            return false
+          }
+        }
+      }
+    }
+
+    // Stalemate vs. Checkmate
+    if((king.getLegalMoves(this, false).length === 0) &&
+    (king.getCheckingPieces(this, king.coordinate).length === 0)) {
+      alert("Stalemate. Draw.")
+    } else {
+      alert("Checkmate. " + enemy_color + " wins.")
+    }
+    this.turn_number = undefined
+    this.castling = undefined
+    this.en_passant = undefined
+    return true
   }
 
   // Checks if board has piece at new_coordinate.
@@ -280,7 +327,8 @@ class Pawn {
       if(!ignore_turn_number && (board.turn_number % 2 == 0)) {
         return legal_moves
       }
-      if(this.move_history.length === 0) {
+      let move_check = board.getPieceByCoordinate(new Coordinate(x, y - 2))
+      if(this.move_history.length === 0 && (move_check === -1)) {
         legal_moves.push(new Coordinate(x, y - 2))
       }
       // En-passant
@@ -300,7 +348,7 @@ class Pawn {
           board.en_passant = right_pawn.coordinate
         }
       }
-      // End
+      // Capture
       let capture_check = board.getPieceByCoordinate(new Coordinate(x + 1, y - 1))
       if((capture_check !== -1) && (capture_check.color == "Black")) {
           legal_moves.push(new Coordinate(x + 1, y - 1))
@@ -318,7 +366,8 @@ class Pawn {
       if(!ignore_turn_number && (board.turn_number % 2 != 0)) {
         return legal_moves
       }
-      if(this.move_history.length === 0) {
+      let move_check = board.getPieceByCoordinate(new Coordinate(x, y + 2))
+      if(this.move_history.length === 0 && (move_check === -1)) {
         legal_moves.push(new Coordinate(x, y + 2))
       }
       // En-passant
@@ -338,7 +387,7 @@ class Pawn {
           board.en_passant = right_pawn.coordinate
         }
       }
-      // End
+      // Capture
       let capture_check = board.getPieceByCoordinate(new Coordinate(x + 1, y + 1))
       if((capture_check !== -1) && (capture_check.color == "White")) {
           legal_moves.push(new Coordinate(x + 1, y + 1))
@@ -466,28 +515,6 @@ class King {
     return legal_king_moves
   }
 
-  checkMateHelper(board, king) {
-    for(let [piece, image] of board.pieces) {
-      if(piece.color === king.color && !piece.piece_name.includes("King")) {
-        let piece_moves = piece.getLegalMoves(board, false)
-        for(let move of piece_moves) {
-          let future_board = board.deepCopy()
-          future_board.updateMoveHistory(piece.coordinate, move)
-          future_board.updatePieces(piece.coordinate, move)
-          future_board.turn_number += 1
-
-          if(this.getCheckingPieces(future_board, king).length !== 0) {
-            return false
-          }
-        }
-      }
-    }
-
-    let enemy_color = (king.color === "White") ? "Black" : "White"
-    alert(enemy_color + " wins!")
-    return true
-  }
-
   getLegalMoves(board, ignore_turn_number) {
     let legal_moves = []
     let enemy_color = (this.color == "White") ? "Black" : "White"
@@ -519,11 +546,6 @@ class King {
     }
     // Remove illegal moves
     legal_moves = this.illegalMovesHelper(board, legal_moves, this)
-
-    // Checkmate
-    if(legal_moves.length === 0) {
-      this.checkMateHelper(board, this)
-    }
     return legal_moves
   }
 }
@@ -811,6 +833,7 @@ function main() {
         ctx.clearRect(0, 0, canvas.width, canvas.height)
         board.drawBoard()
       } else if(clicked_piece !== -1) {
+        board.checkmateHandler()
         // Display legal moves
         second_click = true, previous_coordinate = clicked_coordinate
         legal_moves = clicked_piece.getLegalMoves(board, false)
