@@ -1,7 +1,7 @@
 /*
   TODO
   1. enemy_king_moves & en_passant implementation is a bit messy.
-  2. TODO: Promotion
+  2. TODO: Promotion. For UI, try splitting square into 4 (Queen, Bishop, Knight, Rook)
 */
 
 var canvas = document.getElementById('myCanvas')
@@ -99,6 +99,39 @@ class Board {
     return true
   }
 
+  // Removes any moves that will put ally king in check
+  removeIllegalMoves(board, target_piece, target_legal_moves) {
+    // Already handled by king getLegalMoves
+    if(target_piece.piece_name.includes("King")) {
+      return target_legal_moves
+    }
+
+    let ally_king = "", enemy_king = ""
+    let enemy_color = (target_piece.color === "White") ? "Black" : "White"
+    let legal_moves = []
+    for(let [piece, image] of this.pieces) {
+      if(piece.piece_name.includes("King")) {
+        if(piece.color === target_piece.color) {
+          ally_king = piece
+        } else {
+          enemy_king = piece
+        }
+      }
+    }
+    king_checker:
+    for(let move of target_legal_moves) {
+      let future_board = board.deepCopy()
+      future_board.updateMoveHistory(target_piece.coordinate, move)
+      future_board.updatePieces(target_piece.coordinate, move)
+      future_board.turn_number += 1
+
+      if(ally_king.getCheckingPieces(future_board, ally_king.coordinate).length === 0) {
+        legal_moves.push(move)
+      }
+    }
+    return legal_moves
+  }
+
   // Checks if board has piece at new_coordinate.
   // If so, return piece. Else if invalid coordinate, return -2. Else, return -1.
   getPieceByCoordinate(target_coordinate) {
@@ -152,7 +185,7 @@ class Board {
     let previous_piece = this.getPieceByCoordinate(previous_coordinate)
     previous_piece.coordinate = target_coordinate
 
-    if(this.castling) {
+    if(this.castling && previous_piece.piece_name.includes("King")) {
       // King's side vs. Queen's side castling
       if(target_coordinate.x === 6) {
         let rook = this.getPieceByCoordinate(new Coordinate(7, target_coordinate.y))
@@ -265,16 +298,14 @@ class Board {
   }
 
   // Draw current board along with indicators for legal moves
-  drawBoard(piece) {
+  drawBoard(legal_moves) {
     for(let i = 0; i < 8; i++) {
      for(let j = 0; j < 8; j++) {
        this.drawSquare(i, j, '#deb887', '#8b6914')
      }
    }
-   if(piece !== undefined) {
-     for(let coordinate of piece.getLegalMoves(this, false)) {
-       this.drawSquare(coordinate.x, coordinate.y, '#beb4a7', '#5b5443')
-     }
+   for(let move of legal_moves) {
+     this.drawSquare(move.x, move.y, '#beb4a7', '#5b5443')
    }
    for(let [piece, image] of this.pieces) {
      ctx.drawImage(image, piece.coordinate.x * size, piece.coordinate.y * size, size, size)
@@ -477,7 +508,7 @@ class King {
     return checkList
   }
 
-  // Removes illegal moves from legal_moves
+  // // Removes illegal moves from legal_moves
   illegalMovesHelper(board, legal_moves, king) {
     let legal_king_moves = []
     king_checker:
@@ -819,7 +850,7 @@ function main() {
         if(clicked_coordinate.equals(legal_move)) {
           return legal_move
         }
-      }) && second_click) {
+      }) && second_click && previous_coordinate.x !== -1) {
         board.getPieceByCoordinate(previous_coordinate)
           .move_history.push([previous_coordinate.deepCopy(), clicked_coordinate.deepCopy()])
         if(board.en_passant.x !== -1 && board.en_passant.y !== -1) {
@@ -831,14 +862,15 @@ function main() {
         second_click = false, previous_coordinate.reset()
 
         ctx.clearRect(0, 0, canvas.width, canvas.height)
-        board.drawBoard()
+        board.drawBoard([])
       } else if(clicked_piece !== -1) {
         board.checkmateHandler()
         // Display legal moves
         second_click = true, previous_coordinate = clicked_coordinate
         legal_moves = clicked_piece.getLegalMoves(board, false)
+        legal_moves = board.removeIllegalMoves(board, clicked_piece, legal_moves)
         ctx.clearRect(0, 0, canvas.width, canvas.height)
-        board.drawBoard(clicked_piece)
+        board.drawBoard(legal_moves)
       }
     }
   }, false);
