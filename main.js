@@ -1,7 +1,6 @@
 /*
   TODO
-  1. enemy_king_moves & en_passant implementation is a bit messy.
-  2. TODO: Promotion. For UI, try splitting square into 4 (Queen, Bishop, Knight, Rook)
+  1. 
 */
 
 var canvas = document.getElementById('myCanvas')
@@ -17,12 +16,13 @@ class Board {
   turn_number = 1
   castling = false
   en_passant = new Coordinate(-1, -1)
+  pawn_promotion = new Pawn("", new Coordinate(-1, -1))
+  pawn_promotion_options = []
   move_history = new Map()
   pieces = new Map()
 
   constructor(drawFlag) {
     this.init_board(drawFlag)
-    this.en_passant = new Coordinate(-1, -1)
   }
 
   // Returns a deep copy of this object
@@ -31,6 +31,12 @@ class Board {
     copy.turn_number = this.turn_number
     copy.castling = this.castling
     copy.en_passant = this.en_passant.deepCopy()
+    copy.pawn_promotion = this.pawn_promotion.deepCopy()
+    let copy_pawn_promotion_options = []
+    for(let pawn_promotion_option of this.pawn_promotion_options) {
+      copy_pawn_promotion_options.push(pawn_promotion_option)
+    }
+    copy.pawn_promotion_options = copy_pawn_promotion_options
     let copy_move_history = new Map()
     for(let [piece, move_list] of this.move_history) {
       let copy_piece = piece.deepCopy()
@@ -50,6 +56,112 @@ class Board {
     }
     copy.pieces = copy_pieces
     return copy
+  }
+
+  select_pawn_promotion_handler(clicked_coordinate, canx, cany) {
+    let board = this
+    for(let pawn_promotion_option of this.pawn_promotion_options) {
+      pawn_promotion_option = null
+    }
+    this.pawn_promotion_options = []
+    this.drawBoard([])
+    if(clicked_coordinate.equals(this.pawn_promotion.coordinate)) {
+      let pawn_coordinate = new Coordinate(
+        ((canx / size * 10) - clicked_coordinate.x).toFixed(1),
+        ((cany / size * 10) - clicked_coordinate.y).toFixed(1))
+      if(pawn_coordinate.x <= 0.5) {
+        if(pawn_coordinate.y <= 0.5) {
+          let promoted_queen = new Image()
+          promoted_queen.src = 'Pieces/' + this.pawn_promotion.color + '_Queen.png'
+          promoted_queen.onload = function() {
+            ctx.drawImage(promoted_queen, board.pawn_promotion.coordinate.x * size,
+              board.pawn_promotion.coordinate.y * size, size, size)
+          }
+          this.pieces.set(
+            new Queen(this.pawn_promotion.color + "_Queen", clicked_coordinate),
+            promoted_queen
+          )
+          return false
+        } else {
+          let promoted_knight = new Image()
+          promoted_knight.src = 'Pieces/' + this.pawn_promotion.color + '_Knight.png'
+          promoted_knight.onload = function() {
+            ctx.drawImage(promoted_knight, board.pawn_promotion.coordinate.x * size,
+              board.pawn_promotion.coordinate.y * size, size, size)
+          }
+          this.pieces.set(
+            new Knight(this.pawn_promotion.color + "_Knight", clicked_coordinate),
+            promoted_knight
+          )
+          return false
+        }
+      } else {
+        if(pawn_coordinate.y <= 0.5) {
+          let promoted_bishop = new Image()
+          promoted_bishop.src = 'Pieces/' + this.pawn_promotion.color + '_Bishop.png'
+          promoted_bishop.onload = function() {
+            ctx.drawImage(promoted_bishop, board.pawn_promotion.coordinate.x * size,
+              board.pawn_promotion.coordinate.y * size, size, size)
+          }
+          this.pieces.set(
+            new Bishop(this.pawn_promotion.color + "_Bishop", clicked_coordinate),
+            promoted_bishop
+          )
+          return false
+        } else {
+          let promoted_rook = new Image()
+          promoted_rook.src = 'Pieces/' + this.pawn_promotion.color + '_Rook.png'
+          promoted_rook.onload = function() {
+            ctx.drawImage(promoted_rook, board.pawn_promotion.coordinate.x * size,
+              board.pawn_promotion.coordinate.y * size, size, size)
+          }
+          this.pieces.set(
+            new Rook(this.pawn_promotion.color + "_Rook", clicked_coordinate),
+            promoted_rook
+          )
+          return false
+        }
+      }
+    }
+    return true
+  }
+
+  // Draw pawn promotion options
+  draw_pawn_promotion_options(clicked_coordinate) {
+    if(this.pawn_promotion.piece_name === "") {
+      return false
+    }
+    let promoting_pawn = this.getPieceByCoordinate(clicked_coordinate)
+    let queen_option = new Image()
+    queen_option.src = 'Pieces/' + promoting_pawn.color + '_Queen.png'
+    queen_option.onload = function() {
+      ctx.drawImage(queen_option, promoting_pawn.coordinate.x * size,
+        promoting_pawn.coordinate.y * size, size / 2, size / 2)
+    }
+    this.pawn_promotion_options.push(queen_option)
+    let bishop_option = new Image()
+    bishop_option.src = 'Pieces/' + promoting_pawn.color + '_Bishop.png'
+    bishop_option.onload = function() {
+      ctx.drawImage(bishop_option, (promoting_pawn.coordinate.x + 0.5) * size,
+      promoting_pawn.coordinate.y * size, size / 2, size / 2)
+    }
+    this.pawn_promotion_options.push(bishop_option)
+    let knight_option = new Image()
+    knight_option.src = 'Pieces/' + promoting_pawn.color + '_Knight.png'
+    knight_option.onload = function() {
+      ctx.drawImage(knight_option, promoting_pawn.coordinate.x * size,
+        (promoting_pawn.coordinate.y + 0.5) * size, size / 2, size / 2)
+    }
+    this.pawn_promotion_options.push(knight_option)
+    let rook_option = new Image()
+    rook_option.src = 'Pieces/' + promoting_pawn.color + '_Rook.png'
+    rook_option.onload = function() {
+      ctx.drawImage(rook_option, (promoting_pawn.coordinate.x + 0.5) * size,
+      (promoting_pawn.coordinate.y + 0.5) * size, size / 2, size / 2)
+    }
+    this.pawn_promotion_options.push(rook_option)
+    this.deletePiece(promoting_pawn.coordinate)
+    return true
   }
 
   // Detects checkmate
@@ -392,6 +504,12 @@ class Pawn {
       if(capture_check === -1) {
         legal_moves.push(new Coordinate(x, y - 1))
       }
+      // Pawn Promotion
+      for(let move of legal_moves) {
+        if(move.y === 0) {
+          board.pawn_promotion = this
+        }
+      }
       return legal_moves
     } else if(this.color == "Black") {
       if(!ignore_turn_number && (board.turn_number % 2 != 0)) {
@@ -430,6 +548,12 @@ class Pawn {
       capture_check = board.getPieceByCoordinate(new Coordinate(x, y + 1))
       if(capture_check === -1) {
         legal_moves.push(new Coordinate(x, y + 1))
+      }
+      // Pawn Promotion
+      for(let move of legal_moves) {
+        if(move.y === 7) {
+          board.pawn_promotion = this
+        }
       }
       return legal_moves
     } else {
@@ -832,10 +956,11 @@ class Move {
   // TODO
 }
 
+// var board = new Board(true)
 function main() {
   let board = new Board(true)
   let previous_coordinate = new Coordinate(-1, -1)
-  let second_click = false, legal_moves = []
+  let second_click = false, legal_moves = [], promote_flag = false
   // Watch for clicks on coordinates
   canvas.addEventListener('click', function(event) {
     let canx = event.pageX - canvas.offsetLeft + canvas.clientLeft
@@ -844,28 +969,38 @@ function main() {
     let clicked_coordinate = new Coordinate(Math.floor(canx / size * 10), Math.floor(cany / size * 10))
     let clicked_piece = board.getPieceByCoordinate(clicked_coordinate)
 
-    if(second_click || (clicked_piece !== -1)) {
+    // Pawn_promotion_check
+    if(promote_flag) {
+      promote_flag = board.select_pawn_promotion_handler(clicked_coordinate, canx, cany)
+      board.pawn_promotion = new Pawn("", new Coordinate(-1, -1))
+      board.drawBoard([])
+    } else if((second_click || (clicked_piece !== -1)) && !promote_flag) {
       // Check if clicked coordinate is a legal move
       if(legal_moves.some(function(legal_move) {
-        if(clicked_coordinate.equals(legal_move)) {
-          return legal_move
-        }
+        if(clicked_coordinate.equals(legal_move)) { return legal_move }
       }) && second_click && previous_coordinate.x !== -1) {
         board.getPieceByCoordinate(previous_coordinate)
           .move_history.push([previous_coordinate.deepCopy(), clicked_coordinate.deepCopy()])
         if(board.en_passant.x !== -1 && board.en_passant.y !== -1) {
-          board.deletePiece(board.en_passant)
+          let shift = (clicked_coordinate.y - previous_coordinate.y < 0) ? 1 : -1
+          let target_location = clicked_coordinate.deepCopy()
+          target_location.y += shift
+          if(board.en_passant.equals(target_location)) {
+            board.deletePiece(board.en_passant)
+          }
+          board.en_passant = new Coordinate(-1, -1)
         }
         board.updateMoveHistory(previous_coordinate, clicked_coordinate)
         board.updatePieces(previous_coordinate, clicked_coordinate)
+        if(board.draw_pawn_promotion_options(clicked_coordinate)) {
+          promote_flag = true
+        }
         board.turn_number += 1
         second_click = false, previous_coordinate.reset()
-
         ctx.clearRect(0, 0, canvas.width, canvas.height)
         board.drawBoard([])
       } else if(clicked_piece !== -1) {
         board.checkmateHandler()
-        // Display legal moves
         second_click = true, previous_coordinate = clicked_coordinate
         legal_moves = clicked_piece.getLegalMoves(board, false)
         legal_moves = board.removeIllegalMoves(board, clicked_piece, legal_moves)
