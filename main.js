@@ -1,6 +1,9 @@
 /*
   TODO
-  1. 
+  1. White start/Black start implementation
+  2. move canvas & ctx & other variables to chess class
+  3. Extremely weird bug with move history display
+  4. Bug where capturing pieces don't update correctly on color
 */
 
 var canvas = document.getElementById('myCanvas')
@@ -441,7 +444,7 @@ class Coordinate {
       new_coordinate.x === this.x && new_coordinate.y === this.y)
   }
   reset() {
-    this.x = undefined, this.y = undefined
+    this.x = -1, this.y = -1
   }
 }
 
@@ -952,63 +955,114 @@ class Rook {
   }
 }
 
-class Move {
-  // TODO
-}
+class Chess {
+  constructor() {
+    this.board = new Board(true)
+    this.displayUI(this.board)
+    this.board_history = []
+    // this.player_color = (Math.random() >= 0.5) ? "White" : "Black"
+  }
 
-// var board = new Board(true)
-function main() {
-  let board = new Board(true)
-  let previous_coordinate = new Coordinate(-1, -1)
-  let second_click = false, legal_moves = [], promote_flag = false
-  // Watch for clicks on coordinates
-  canvas.addEventListener('click', function(event) {
-    let canx = event.pageX - canvas.offsetLeft + canvas.clientLeft
-    let cany = event.pageY - canvas.offsetTop + canvas.clientTop
-    // Converts x-y coordinates to grid coordinates (to-scale)
-    let clicked_coordinate = new Coordinate(Math.floor(canx / size * 10), Math.floor(cany / size * 10))
-    let clicked_piece = board.getPieceByCoordinate(clicked_coordinate)
+  run() {
+    let chess = this, board = this.board
+    let previous_coordinate = new Coordinate(-1, -1)
+    let second_click = false, legal_moves = [], promote_flag = false
 
-    // Pawn_promotion_check
-    if(promote_flag) {
-      promote_flag = board.select_pawn_promotion_handler(clicked_coordinate, canx, cany)
-      board.pawn_promotion = new Pawn("", new Coordinate(-1, -1))
-      board.drawBoard([])
-    } else if((second_click || (clicked_piece !== -1)) && !promote_flag) {
-      // Check if clicked coordinate is a legal move
-      if(legal_moves.some(function(legal_move) {
-        if(clicked_coordinate.equals(legal_move)) { return legal_move }
-      }) && second_click && previous_coordinate.x !== -1) {
-        board.getPieceByCoordinate(previous_coordinate)
-          .move_history.push([previous_coordinate.deepCopy(), clicked_coordinate.deepCopy()])
-        if(board.en_passant.x !== -1 && board.en_passant.y !== -1) {
-          let shift = (clicked_coordinate.y - previous_coordinate.y < 0) ? 1 : -1
-          let target_location = clicked_coordinate.deepCopy()
-          target_location.y += shift
-          if(board.en_passant.equals(target_location)) {
-            board.deletePiece(board.en_passant)
-          }
-          board.en_passant = new Coordinate(-1, -1)
+    let back_button = document.getElementById("BackButton").onclick =
+      function() {
+        if(board.turn_number > 1) {
+          board = chess.board_history[board.turn_number - 2]
+          chess.board_history.pop()
+          board.drawBoard([])
+          chess.displayUI(board, previous_coordinate)
         }
-        board.updateMoveHistory(previous_coordinate, clicked_coordinate)
-        board.updatePieces(previous_coordinate, clicked_coordinate)
-        if(board.draw_pawn_promotion_options(clicked_coordinate)) {
-          promote_flag = true
-        }
-        board.turn_number += 1
-        second_click = false, previous_coordinate.reset()
-        ctx.clearRect(0, 0, canvas.width, canvas.height)
+      }
+    let reset_button = document.getElementById("ResetButton").onclick =
+      function() {
+        this.board_history = []
+        this.board = new Board(true)
+        chess.displayUI(this.board, undefined, true)
+      }
+    // Watch for clicks on coordinates
+    canvas.addEventListener('click', function(event) {
+      let canx = event.pageX - canvas.offsetLeft + canvas.clientLeft
+      let cany = event.pageY - canvas.offsetTop + canvas.clientTop
+      // Converts x-y coordinates to grid coordinates (to-scale)
+      let clicked_coordinate = new Coordinate(Math.floor(canx / size * 10), Math.floor(cany / size * 10))
+      let clicked_piece = board.getPieceByCoordinate(clicked_coordinate)
+
+      // Pawn_promotion_check
+      if(promote_flag) {
+        chess.board_history.push(board.deepCopy())
+        promote_flag = board.select_pawn_promotion_handler(clicked_coordinate, canx, cany)
+        board.pawn_promotion = new Pawn("", new Coordinate(-1, -1))
         board.drawBoard([])
-      } else if(clicked_piece !== -1) {
-        board.checkmateHandler()
-        second_click = true, previous_coordinate = clicked_coordinate
-        legal_moves = clicked_piece.getLegalMoves(board, false)
-        legal_moves = board.removeIllegalMoves(board, clicked_piece, legal_moves)
-        ctx.clearRect(0, 0, canvas.width, canvas.height)
-        board.drawBoard(legal_moves)
+        chess.displayUI(board, clicked_coordinate)
+      } else if((second_click || (clicked_piece !== -1)) && !promote_flag) {
+        // Check if clicked coordinate is a legal move
+        if(legal_moves.some(function(legal_move) {
+          if(clicked_coordinate.equals(legal_move)) { return legal_move }
+        }) && second_click && previous_coordinate.x !== -1) {
+          chess.board_history.push(board.deepCopy())
+          board.getPieceByCoordinate(previous_coordinate)
+            .move_history.push([previous_coordinate.deepCopy(), clicked_coordinate.deepCopy()])
+          if(board.en_passant.x !== -1 && board.en_passant.y !== -1) {
+            let shift = (clicked_coordinate.y - previous_coordinate.y < 0) ? 1 : -1
+            let target_location = clicked_coordinate.deepCopy()
+            target_location.y += shift
+            if(board.en_passant.equals(target_location)) {
+              board.deletePiece(board.en_passant)
+            }
+            board.en_passant = new Coordinate(-1, -1)
+          }
+          board.updateMoveHistory(previous_coordinate, clicked_coordinate)
+          board.updatePieces(previous_coordinate, clicked_coordinate)
+          if(board.draw_pawn_promotion_options(clicked_coordinate)) {
+            promote_flag = true
+          }
+          board.turn_number += 1
+          second_click = false, previous_coordinate.reset()
+          ctx.clearRect(0, 0, canvas.width, canvas.height)
+          board.drawBoard([])
+          chess.displayUI(board, clicked_coordinate)
+        } else if(clicked_piece !== -1) {
+          board.checkmateHandler()
+          second_click = true, previous_coordinate = clicked_coordinate
+          legal_moves = clicked_piece.getLegalMoves(board, false)
+          legal_moves = board.removeIllegalMoves(board, clicked_piece, legal_moves)
+          ctx.clearRect(0, 0, canvas.width, canvas.height)
+          board.drawBoard(legal_moves)
+        }
+      }
+    }, false);
+  }
+
+  displayUI(board, clicked_coordinate, reset) {
+    let white_box = document.getElementById("WhiteText").innerHTML = "White"
+    let black_box = document.getElementById("BlackText").innerHTML = "Black"
+    let move_box = document.getElementById("MoveText").innerHTML = "Turn " +
+      (Math.floor(board.turn_number / 2) === 0 ? "1" : Math.floor(board.turn_number / 2))
+    let options_box = document.getElementById("OptionsText").innerHTML = "Board Controls"
+
+    let clicked_history = board.getMoveHistory(clicked_coordinate)
+    if(clicked_history.length !== 0) {
+      let recent_move = clicked_history[clicked_history.length - 1]
+      let clicked_piece = board.getPieceByCoordinate(clicked_coordinate)
+      if(this.board.turn_number % 2 === 0) {
+        let white_moves = document.getElementById("WhiteMoves").innerHTML =
+          clicked_piece.piece_name + " moves to (" + recent_move.x + ", " + recent_move.y + ")"
+      } else {
+        let black_moves = document.getElementById("BlackMoves").innerHTML =
+          clicked_piece.piece_name + " moves to (" + recent_move.x + ", " + recent_move.y + ")"
       }
     }
-  }, false);
+    if(reset) {
+      console.log("a")
+      let white_moves = document.getElementById("WhiteMoves").innerHTML = "WhiteMoves"
+      let black_moves = document.getElementById("BlackMoves").innerHTML = "BlackMoves"
+    }
+  }
 }
 
-main()
+let game_instance = new Chess()
+game_instance.run()

@@ -21,10 +21,119 @@ canvas {
 
 .InfoBox {
   background: #ffffff;
-  border: 5px solid #f1f1f1;
   width: 600px;
   height: 750px;
   position: absolute;
   left: 57em;
   top: 1.6em;
+}
+
+.WhiteBox {
+  background: #E7E7E7;
+  border: 1px groove #312e2b;
+  width: 298px;
+  height: 199px;
+  position: absolute;
+}
+
+#WhiteBox p:nth-of-type(1) {
+  margin-top: 5px;
+  margin-left: 85px;
+  top: 5px;
+  font: 40px Verdana, Geneva, sans-serif;
+  color: #333333;
+}
+
+.BlackBox {
+  background: #333333;
+  border: 1px groove #312e2b;
+  width: 298px;
+  height: 199px;
+  position: relative;
+  left: 300px;
+}
+
+#BlackBox p:nth-of-type(1) {
+  margin-top: 5px;
+  margin-left: 85px;
+  top: 5px;
+  font: 40px Verdana, Geneva, sans-serif;
+  color: #EEEEEE;
+}
+
+.MoveBox {
+  background: #E5E5E5;
+  border: 1px solid #312e2b;
+  width: 598px;
+  height: 398px;
+  position: relative;
+  up: 199px;
+}
+
+#MoveBox p:nth-of-type(1) {
+  margin-top: 5px;
+  margin-left: 85px;
+  top: 5px;
+  font: 40px Verdana, Geneva, sans-serif;
+  color: #333333;
+}
+
+#MoveBox p:nth-of-type(2) {
+  margin-top: 45px;
+  margin-left: 85px;
+  top: 5px;
+  font: 20px Verdana, Geneva, sans-serif;
+  color: #333333;
+}
+
+#MoveBox p:nth-of-type(3) {
+  margin-top: 85px;
+  margin-left: 85px;
+  top: 5px;
+  font: 20px Verdana, Geneva, sans-serif;
+  color: #333333;
+}
+
+.OptionsBox {
+  background: #888888;
+  border: 1px solid #312e2b;
+  width: 598px;
+  height: 147px;
+  position: relative;
+  up: 597px;
+}
+
+#OptionsBox p:nth-of-type(1) {
+  margin-top: 5px;
+  margin-left: 175px;
+  top: 5px;
+  font: 32px Verdana, Geneva, sans-serif;
+  color: #333333;
+}
+
+.BackButton {
+  background: url(Icons/back.png) center no-repeat;
+  background-size: 100% 100%;
+  width: 75px;
+  height: 75px;
+  cursor:pointer;
+  overflow: hidden;
+  outline:none;
+  position: relative;
+  left: 25px;
+  bottom: 25px;
+}
+
+.ResetButton {
+  width: 100px;
+  height: 50px;
+  font: 28px Verdana, Geneva, sans-serif;
+  color: #333333;
+  position: relative;
+  left: 50px;
+  bottom: 50px;
+  cursor:pointer;
+  overflow: hidden;
+  outline:none;
+  position: relative;
 }
