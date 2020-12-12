@@ -1,0 +1,33 @@
+.main {
+  width: 100%;
+  background-color: #121212;
+  min-height: 100vh;
+}
+
+.content {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100%;
+}
+
+.board {
+  background-color: #F5F5F5;
+}
+
+.chess-row {
+  display: flex;
+  flex-direction: row;
+}
+
+.lightSquare {
+  background-color: #f0d9b5;
+}
+
+.darkSquare {
+  background-color: #b58863;
+}
+
+.chess-piece {
+  cursor: grab;
+}
