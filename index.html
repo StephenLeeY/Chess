@@ -9,6 +9,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" charset="utf-8">
 
     <!-- JAVASCRIPT IMPORTS -->
+    <script src="js/utility.js"></script>
     <script src="js/chess.js"></script>
   </head>
 
@@ -17,7 +18,10 @@
     <div class="main">
       <div class="content">
         <div class="board" id="board"></div>
-        <button type="button" class="btn btn-light switch" id="switch">Switch Sides</button>
+        <div class="toolbar row">
+          <button type="button" class="btn btn-light switch" id="switch">Switch Sides</button>
+          <button type="button" class="btn btn-light reset" id="reset">Reset</button>
+        </div>
       </div>
     </div>
   </body>

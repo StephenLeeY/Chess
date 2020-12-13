@@ -1,6 +1,7 @@
+/* GENERAL DIVS */
 .main {
   width: 100%;
-  background-color: #121212;
+  background-color: #161616;
   min-height: 100vh;
 }
 
@@ -11,6 +12,8 @@
   align-items: center;
   min-height: 100%;
 }
+
+/* BOARD RELATED DIVS */
 
 .board {
   background-color: #F5F5F5;
@@ -37,6 +40,9 @@
   cursor: grab;
 }
 
-.switch {
+/* TOOLBAR RELATED DIVS */
+.btn {
   margin-top: 2rem;
+  margin-left: 0.5rem;
+  margin-right: 0.5rem;
 }
