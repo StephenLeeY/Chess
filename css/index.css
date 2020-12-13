@@ -6,6 +6,7 @@
 
 .content {
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   min-height: 100%;
@@ -28,6 +29,14 @@
   background-color: #b58863;
 }
 
+.highlightedSquare {
+  background-color: #f7ec5b;
+}
+
 .chess-piece {
   cursor: grab;
+}
+
+.switch {
+  margin-top: 2rem;
 }
