@@ -1,8 +1,7 @@
 // TODO:
 // 1. Figure out dragging mechanics for pieces
 // 2. Pawn promotion
-// 3. Castling - can't castle if one of the moves is in danger
-// 4. Rewrite is_within_moveset to return legal moves given a coordinate
+// 3. Highlighted square shift when flip board
 
 const utility = new JavascriptToolbox();
 
@@ -10,7 +9,12 @@ class State {
   ptm = "White";
   move_history = [];
   orientation = "White";
-  castle_avail = [[true, true], [true, true]];
+  delayed_moves = [];
+
+  // [castle_left_avail, castle_right_avail]
+  castle_avail = {'White' : [true, true], 'Black' : [true, true]};
+  // [castle_ready, king_dest, change_index]
+  castle_info = {'Left' : [false, [-1, -1]], 'Right' : [false, [-1, -1]]};
 
   constructor() {
     this.board = this.init_board();
@@ -21,7 +25,6 @@ class State {
     copy.ptm = this.ptm;
     copy.move_history = JSON.parse(JSON.stringify(this.move_history));
     copy.orientation = this.orientation;
-    copy.castle_avail = JSON.parse(JSON.stringify(this.castle_avail));
     copy.board = [];
     for(let i = 0; i < this.board.length; i++) {
       let row = [];
@@ -30,6 +33,14 @@ class State {
       }
       copy.board.push(row);
     }
+    if(this.delayed_moves.length !== 0) {
+      copy.delayed_moves = [];
+      for(let move in this.delayed_moves) {
+        copy.delayed_moves.push([JSON.parse(JSON.stringify(move[0])), new Piece(move[1].type, move[1].color)]);
+      }
+    }
+    copy.castle_avail = JSON.parse(JSON.stringify(this.castle_avail));
+    copy.castle_info = JSON.parse(JSON.stringify(this.castle_info));
     return copy;
   }
 
@@ -72,24 +83,98 @@ class State {
   move_piece(coor1, coor2, is_simulation) {
     const piece1 = this.board[coor1[0]][coor1[1]];
     const piece2 = this.board[coor2[0]][coor2[1]];
+    const _this = this;
+    coor1 = [parseInt(coor1[0]), parseInt(coor1[1])];
+    coor2 = [parseInt(coor2[0]), parseInt(coor2[1])];
+
+    function castle_handler() {
+      // Castling - Rook
+      if(piece1.type === 'Rook') {
+        const change_index_color = (piece1.color === "White") ? 0 : 1;
+        const change_index_side = (coor2[1] === 0) ? 0 : 1;
+        _this.castle_avail[change_index_color][change_index_side] = false;
+      }
+      // Castling - King
+      else if(piece1.type === 'King') {
+        const change_index = (piece1.color === "White") ? 0 : 1;
+        // Left Castle
+        if(_this.castle_info['Left'][0] && utility.arrays_equal(_this.castle_info['Left'][1], coor2)) {
+          const king_dest = _this.castle_info['Left'][1];
+          const rook = _this.board[king_dest[0]][0];
+          _this.board[king_dest[0]][3] = rook;
+          _this.board[king_dest[0]][0] = new Piece("Empty", "None");
+          _this.castle_info['Left'] = [false, [-1, -1]];
+        }
+        // Right Castle
+        else if(_this.castle_info['Right'][0] && utility.arrays_equal(_this.castle_info['Right'][1], coor2)) {
+          const king_dest = _this.castle_info['Right'][1];
+          const rook = _this.board[king_dest[0]][_this.board.length - 1];
+          _this.board[king_dest[0]][_this.board.length - 3] = rook;
+          _this.board[king_dest[0]][_this.board.length - 1] = new Piece("Empty", "None");
+          _this.castle_info['Right'] = [false, [-1, -1]];
+        }
+        _this.castle_avail[change_index] = [false, false];
+      }
+    }
+
+    function endgame_handler() {
+      if(!is_simulation) {
+        const king_info = _this.find_king(_this.ptm);
+        // If King is in check or worse...
+        if(_this.is_in_danger(king_info[0].color, king_info[1])) {
+          // Find all ally pieces...
+          for(let y = 0; y < _this.board.length; y++) {
+            for(let x = 0; x < _this.board[0].length; x++) {
+              const check_piece = _this.board[y][x];
+              if(check_piece.color === _this.ptm) {
+                const legal_moves = _this.get_legal_moves([y, x], true);
+                // Simulate all legal moves...
+                for(let move in legal_moves) {
+                  let simulation = _this.deep_copy();
+                  simulation.move_piece([y, x], move, true);
+                  const sim_king_info = simulation.find_king(_this.ptm);
+                  // If a legal move that removes the ally King from check is found...
+                  if(!simulation.is_in_danger(sim_king_info[0].color, sim_king_info[1])) {
+                    return false;
+                  }
+                }
+              }
+            }
+          }
+          // Checkmate handler
+          const winner = (_this.ptm === "White") ? "Black" : "White";
+          alert(`Checkmate! Winner is ${winner}.`);
+          _this.reset();
+          return true;
+        }
+      }
+    }
 
     if(piece1.color === this.ptm) {
+      // Endgame detection & handler
+      if(endgame_handler()) return true;
+
       // Validity check
-      if(!this.is_within_moveset(coor1, coor2)) {
-        return
-      }
+      const valid_moveset = this.get_legal_moves(coor1, is_simulation);
+      if(!valid_moveset.find(ele => utility.arrays_equal(ele, coor2))) return
 
       // Legality check
-      if(!is_simulation && !this.is_legal_move(coor1, coor2)) {
-        return
-      }
+      if(!is_simulation) if(!this.is_legal_move(coor1, coor2)) return
 
+      // Castle info + Rook moving logic
+      castle_handler();
+
+      // En passant helper
+      this.delayed_moves.forEach(move => _this.board[move[0][0]][move[0][1]] = move[1]);
+      this.delayed_moves = [];
+
+      // Move Handler
       if(piece2.type === "Empty" && piece2.color === "None") {
-        // Move Handler
         this.board[coor2[0]][coor2[1]] = piece1;
         this.board[coor1[0]][coor1[1]] = piece2;
-      } else {
-        // Capture Handler
+      }
+      // Capture Handler
+      else {
         this.board[coor2[0]][coor2[1]] = piece1;
         this.board[coor1[0]][coor1[1]] = new Piece("Empty", "None");
       }
@@ -102,17 +187,15 @@ class State {
 
   // Checks if move is within piece's possible movesets
   // valid_moveset is in format: (y, x)
-  is_within_moveset(coor1, coor2) {
-    let piece = this.board[coor1[0]][coor1[1]];
-    let target = this.board[coor2[0]][coor2[1]];
+  get_legal_moves(coor, is_simulation) {
+    let piece = this.board[coor[0]][coor[1]];
     let valid_moveset = [];
-    let _this = this;
-    coor1 = [parseInt(coor1[0]), parseInt(coor1[1])]
-    coor2 = [parseInt(coor2[0]), parseInt(coor2[1])]
+    const _this = this;
+    coor = [parseInt(coor[0]), parseInt(coor[1])]
 
     function valid_moveset_handler(trans) {
       return function(trans) {
-        const trans_coor = utility.array_add(trans, coor1);
+        const trans_coor = utility.array_add(trans, coor);
         if(trans_coor[0] >= 0 && trans_coor[0] < _this.board.length &&
            trans_coor[1] >= 0 && trans_coor[1] < _this.board[0].length &&
            _this.board[trans_coor[0]][trans_coor[1]].color !== piece.color) {
@@ -121,51 +204,66 @@ class State {
       }
     }
 
+    function en_passant_handler(checking_move) {
+      // If first move, skip
+      if(_this.move_history.length === 0) return;
+      // If the last move was a 2 space pawn advance
+      const last_move = _this.move_history[_this.move_history.length - 1];
+      if(last_move[0][0].type === "Pawn" && Math.abs(last_move[0][1][0] - last_move[1][1][0]) === 2) {
+        // and the desired move is in the correct spot
+        const target_y = (_this.orientation === piece.color) ? last_move[1][1][0] - 1 : parseInt(last_move[1][1][0]) + 1;
+        if(parseInt(last_move[1][1][1]) === checking_move[1] && target_y === checking_move[0]) {
+          if(!is_simulation) _this.delayed_moves.push([[last_move[1][1][0], last_move[1][1][1]], new Piece("Empty", "None")]);
+          return checking_move;
+        }
+      }
+    }
+
     function rook_handler() {
-      for(let y1 = coor1[0] - 1; y1 >= 0; y1--) {
-        const inspect_piece = _this.board[y1][coor1[1]];
+      for(let y1 = coor[0] - 1; y1 >= 0; y1--) {
+        const inspect_piece = _this.board[y1][coor[1]];
         if(inspect_piece.type === "Empty" || inspect_piece.color === "None") {
-          valid_moveset.push([y1, coor1[1]]);
+          valid_moveset.push([y1, coor[1]]);
         }
         else if(inspect_piece.type !== "Empty" || inspect_piece.color !== "None") {
           if(inspect_piece.color !== piece.color) {
-            valid_moveset.push([y1, coor1[1]]);
+            valid_moveset.push([y1, coor[1]]);
           }
           break;
         }
       }
-      for(let y2 = coor1[0] + 1; y2 < _this.board.length; y2++) {
-        const inspect_piece = _this.board[y2][coor1[1]];
+      for(let y2 = coor[0] + 1; y2 < _this.board.length; y2++) {
+        const inspect_piece = _this.board[y2][coor[1]];
         if(inspect_piece.type === "Empty" || inspect_piece.color === "None") {
-          valid_moveset.push([y2, coor1[1]]);
+          valid_moveset.push([y2, coor[1]]);
         }
         else if(inspect_piece.type !== "Empty" || inspect_piece.color !== "None") {
           if(inspect_piece.color !== piece.color) {
-            valid_moveset.push([y2, coor1[1]]);
+            valid_moveset.push([y2, coor[1]]);
           }
           break;
         }
       }
-      for(let x1 = coor1[1] - 1; x1 >= 0; x1--) {
-        const inspect_piece = _this.board[coor1[0]][x1];
+      for(let x1 = coor[1] - 1; x1 >= 0; x1--) {
+        const inspect_piece = _this.board[coor[0]][x1];
         if(inspect_piece.type === "Empty" || inspect_piece.color === "None") {
-          valid_moveset.push([coor1[0], x1]);
+          valid_moveset.push([coor[0], x1]);
         }
         else if(inspect_piece.type !== "Empty" || inspect_piece.color !== "None") {
           if(inspect_piece.color !== piece.color) {
-            valid_moveset.push([coor1[0], x1]);
+            valid_moveset.push([coor[0], x1]);
           }
           break;
         }
       }
-      for(let x2 = coor1[1] + 1; x2 < _this.board[0].length; x2++) {
-        const inspect_piece = _this.board[coor1[0]][x2];
+      for(let x2 = coor[1] + 1; x2 < _this.board[0].length; x2++) {
+        const inspect_piece = _this.board[coor[0]][x2];
         if(inspect_piece.type === "Empty" || inspect_piece.color === "None") {
-          valid_moveset.push([coor1[0], x2]);
+          valid_moveset.push([coor[0], x2]);
         }
         else if(inspect_piece.type !== "Empty" || inspect_piece.color !== "None") {
           if(inspect_piece.color !== piece.color) {
-            valid_moveset.push([coor1[0], x2]);
+            valid_moveset.push([coor[0], x2]);
           }
           break;
         }
@@ -175,7 +273,7 @@ class State {
 
     function bishop_handler() {
       let valid_moveset = [];
-      for(let cy = coor1[0] + 1, cx = coor1[1] - 1; cy < _this.board.length && cx >= 0; cy++, cx--) {
+      for(let cy = coor[0] + 1, cx = coor[1] - 1; cy < _this.board.length && cx >= 0; cy++, cx--) {
         const inspect_piece = _this.board[cy][cx];
         if(inspect_piece.type === "Empty" || inspect_piece.color === "None") {
           valid_moveset.push([cy, cx]);
@@ -187,7 +285,7 @@ class State {
           break;
         }
       }
-      for(let cy = coor1[0] - 1, cx = coor1[1] + 1; cy >= 0 && cx < _this.board.length; cy--, cx++) {
+      for(let cy = coor[0] - 1, cx = coor[1] + 1; cy >= 0 && cx < _this.board.length; cy--, cx++) {
         const inspect_piece = _this.board[cy][cx];
         if(inspect_piece.type === "Empty" || inspect_piece.color === "None") {
           valid_moveset.push([cy, cx]);
@@ -199,7 +297,7 @@ class State {
           break;
         }
       }
-      for(let cy = coor1[0] + 1, cx = coor1[1] + 1; cy < _this.board.length && cx < _this.board.length; cy++, cx++) {
+      for(let cy = coor[0] + 1, cx = coor[1] + 1; cy < _this.board.length && cx < _this.board.length; cy++, cx++) {
         const inspect_piece = _this.board[cy][cx];
         if(inspect_piece.type === "Empty" || inspect_piece.color === "None") {
           valid_moveset.push([cy, cx]);
@@ -211,7 +309,7 @@ class State {
           break;
         }
       }
-      for(let cy = coor1[0] - 1, cx = coor1[1] - 1; cy >= 0 && cx >= 0; cy--, cx--) {
+      for(let cy = coor[0] - 1, cx = coor[1] - 1; cy >= 0 && cx >= 0; cy--, cx--) {
         const inspect_piece = _this.board[cy][cx];
         if(inspect_piece.type === "Empty" || inspect_piece.color === "None") {
           valid_moveset.push([cy, cx]);
@@ -227,49 +325,39 @@ class State {
       return valid_moveset;
     }
 
-    function castle_handler() {
+    function castle_info_update() {
       let castle_moveset = [[0, -2], [0, 2]];
-      const change_index = (piece.color === "White") ? 0 : 1;
-      let king_dest = undefined, check_piece = undefined, castle_unavail = false;
+      let king_dest = undefined, check_piece = undefined, castle_ready = true;
+      let return_moveset = [];
 
-      if(_this.castle_avail[change_index][0]) {
-        king_dest = utility.array_add(castle_moveset[0], coor1);
-        for(let i = coor1[1] - 1; i >= 1; i--) {
+      if(_this.castle_avail[piece.color][0]) {
+        king_dest = utility.array_add(castle_moveset[0], coor);
+        for(let i = coor[1] - 1; i >= 1; i--) {
           check_piece = _this.board[king_dest[0]][i];
-          if(check_piece.type !== "Empty" || check_piece.color !== "None") {
-            castle_unavail = true;
-            break;
+          if(check_piece.type !== "Empty" || check_piece.color !== "None" ||
+             _this.is_in_danger(piece.color, [king_dest[0], i])) {
+               castle_ready = false;
+               break;
           }
         }
-        if(!castle_unavail && utility.arrays_equal(king_dest, coor2)) {
-          // Swap rook into correct spot
-          const rook = _this.board[king_dest[0]][0];
-          _this.board[king_dest[0]][3] = rook;
-          _this.board[king_dest[0]][0] = new Piece("Empty", "None");
-          this.castle_avail[change_index] = [false, false];
-          return true;
-        }
+        _this.castle_info['Left'] = [castle_ready, king_dest];
+        if(castle_ready) return_moveset.push(king_dest);
       }
-      king_dest = undefined, check_piece = undefined, castle_unavail = false;
-      if(_this.castle_avail[change_index][1]) {
-        king_dest = utility.array_add(castle_moveset[1], coor1);
-        for(let i = coor1[1] + 1; i <= _this.board.length - 2; i++) {
+      king_dest = undefined, check_piece = undefined, castle_ready = true;
+      if(_this.castle_avail[piece.color][1]) {
+        king_dest = utility.array_add(castle_moveset[1], coor);
+        for(let i = coor[1] + 1; i <= _this.board.length - 2; i++) {
           check_piece = _this.board[king_dest[0]][i];
-          if(check_piece.type !== "Empty" || check_piece.color !== "None") {
-            castle_unavail = true;
-            break;
+          if(check_piece.type !== "Empty" || check_piece.color !== "None" ||
+             _this.is_in_danger(piece.color, [king_dest[0], i])) {
+               castle_ready = false;
+               break;
           }
         }
-        if(!castle_unavail && utility.arrays_equal(king_dest, coor2)) {
-          // Swap rook into correct spot
-          const rook = _this.board[king_dest[0]][_this.board.length - 1];
-          _this.board[king_dest[0]][_this.board.length - 3] = rook;
-          _this.board[king_dest[0]][_this.board.length - 1] = new Piece("Empty", "None");
-          this.castle_avail[change_index] = [false, false];
-          return true;
-        }
+        _this.castle_info['Right'] = [castle_ready, king_dest];
+        if(castle_ready) return_moveset.push(king_dest);
       }
-      return false;
+      return return_moveset;
     }
 
     switch(piece.type) {
@@ -279,90 +367,101 @@ class State {
           valid_moveset = valid_moveset.map(trans => trans.map(x => x * -1));
         }
         valid_moveset = valid_moveset.map(valid_moveset_handler(valid_moveset));
+        let return_moveset = [];
 
         // Normal move handlers
-        if(utility.arrays_equal(valid_moveset[0], coor2)) {
-          return target.type === "Empty" && target.color === "None";
-        }
-        else if(utility.arrays_equal(valid_moveset[1], coor2)) {
-          const blocking_piece = this.board[valid_moveset[0][0]][valid_moveset[0][1]];
-          return blocking_piece.type === "Empty" && blocking_piece.color === "None" &&
-                 target.type === "Empty" && target.color === "None";
-        }
-        // Capture handler
-        else if(utility.arrays_equal(valid_moveset[2], coor2) || utility.arrays_equal(valid_moveset[3], coor2)) {
-          // En passant handler
-          const last_move = this.move_history[this.move_history.length - 1];
-          // If the last move was a 2 space pawn advance
-          if(last_move[0][0].type === "Pawn" && Math.abs(last_move[0][1][0] - last_move[1][1][0]) === 2) {
-            // and the desired move is in the correct spot
-            const target_y = (this.orientation === piece.color) ? last_move[1][1][0] - 1 : parseInt(last_move[1][1][0]) + 1;
-            if(parseInt(last_move[1][1][1]) === coor2[1] && target_y === coor2[0]) {
-              this.board[last_move[1][1][0]][last_move[1][1][1]] = new Piece("Empty", "None");
-              return true;
-            }
+        if(valid_moveset[0] !== undefined) {
+          const target_piece = this.board[valid_moveset[0][0]][valid_moveset[0][1]];
+          if(target_piece.type === "Empty" && target_piece.color === "None") {
+            return_moveset.push(valid_moveset[0]);
           }
-
-          return target.type !== "Empty" && target.color !== "None";
         }
+        if(valid_moveset[0] !== undefined && valid_moveset[1] !== undefined) {
+          const blocking_piece = this.board[valid_moveset[0][0]][valid_moveset[0][1]];
+          const target_piece = this.board[valid_moveset[1][0]][valid_moveset[1][1]];
+          if(blocking_piece.type === "Empty" && blocking_piece.color === "None" &&
+             target_piece.type === "Empty" && target_piece.color === "None") {
+            return_moveset.push(valid_moveset[1]);
+          }
+        }
+
+        // Capture & En passant logic
+        if(valid_moveset[2] !== undefined) {
+          return_moveset.push(en_passant_handler(valid_moveset[2]));
+          const target_piece = this.board[valid_moveset[2][0]][valid_moveset[2][1]];
+          if(target_piece.type !== "Empty" && target_piece.color !== "None") {
+            return_moveset.push(valid_moveset[2]);
+          }
+        }
+        if(valid_moveset[3] !== undefined) {
+          return_moveset.push(en_passant_handler(valid_moveset[3]));
+          const target_piece = this.board[valid_moveset[3][0]][valid_moveset[3][1]];
+          if(target_piece.type !== "Empty" && target_piece.color !== "None") {
+            return_moveset.push(valid_moveset[3]);
+          }
+        }
+
+        return return_moveset;
         break;
       case 'Rook':
-        valid_moveset = rook_handler();
-        // If rook is moving, make castling unavailable for that side
-        if(valid_moveset.find(ele => utility.arrays_equal(ele, coor2))) {
-          const change_index_color = (piece.color === "White") ? 0 : 1;
-          const change_index_side = (coor2[1] === 0) ? 0 : 1;
-          this.castle_avail[change_index_color][change_index_side] = false;
-          return true;
-        }
+        return rook_handler();
         break;
       case 'Knight':
         valid_moveset = [[2, -1], [2, 1], [1, 2], [1, -2], [-1, 2], [-1, -2], [-2, -1], [-2, 1]];
-        valid_moveset = valid_moveset.map(valid_moveset_handler(valid_moveset));
-        return valid_moveset.find(ele => utility.arrays_equal(ele, coor2));
+        return valid_moveset.map(valid_moveset_handler(valid_moveset));
         break;
       case 'Bishop':
-        valid_moveset = bishop_handler();
-        return valid_moveset.find(ele => utility.arrays_equal(ele, coor2));
+      return bishop_handler();
         break;
       case 'King':
         valid_moveset = [[ 1, -1], [ 1, 0], [ 1,  1],
                          [ 0, -1],          [ 0,  1],
-                         [-1, -1], [-1, 0], [-1, -1]];
+                         [-1, -1], [-1, 0], [-1,  1]];
         valid_moveset = valid_moveset.map(valid_moveset_handler(valid_moveset));
-
-        // Castle Handler
-        if(castle_handler()) return true;
-
-        // If king is moving, make castling unavailable
-        if(valid_moveset.find(ele => utility.arrays_equal(ele, coor2))) {
-          const change_index = (piece.color === "White") ? 0 : 1;
-          this.castle_avail[change_index] = [false, false];
-          return true;
-        }
+        if(!is_simulation) valid_moveset = valid_moveset.concat(castle_info_update());
+        return valid_moveset;
         break;
       case 'Queen':
-        valid_moveset = bishop_handler().concat(rook_handler());
-        return valid_moveset.find(ele => utility.arrays_equal(ele, coor2));
+        return bishop_handler().concat(rook_handler());
         break;
     }
-
-    return false;
+    console.log("ERROR: Invalid piece type.");
   }
 
   // Returns true if piece is in danger
-  is_in_danger(piece) {
-    const piece_types = ['Pawn', 'Rook', 'Knight', 'Bishop', 'King', 'Queen'];
-
+  is_in_danger(color, coor) {
+    for(let y = 0; y < this.board.length; y++) {
+      for(let x = 0; x < this.board[0].length; x++) {
+        const check_piece = this.board[y][x];
+        if(check_piece.type !== "Empty" && check_piece.color !== color) {
+          if(this.get_legal_moves([y, x], true).find(loc => utility.arrays_equal(loc, coor))) {
+            return true;
+          }
+        }
+      }
+    }
     return false;
+  }
+
+  // Returns king piece object, coordinates
+  find_king(color) {
+    for(let y = 0; y < this.board.length; y++) {
+      for(let x = 0; x < this.board[0].length; x++) {
+        const check_piece = this.board[y][x];
+        if(check_piece.type === "King" && check_piece.color === color) {
+          return [check_piece, [y, x]];
+        }
+      }
+    }
   }
 
   // Simulates a turn and checks if move puts king in dange
   is_legal_move(coor1, coor2) {
     let simulation = this.deep_copy();
     simulation.move_piece(coor1, coor2, true);
-    const king = simulation.board.find(ele => ele.type === "King" && ele.color === this.ptm);
-    return !simulation.is_in_danger(king);
+
+    const king_info = simulation.find_king(this.ptm);
+    return !simulation.is_in_danger(king_info[0].color, king_info[1]);
   }
 }
 
