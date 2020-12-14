@@ -1,8 +1,8 @@
 // TODO:
-// 1. Figure out dragging mechanics for pieces --> Draggable JS library
+// 1. Figure out dragging mechanics for pieces
 // 2. Pawn promotion
-// 3. Castling
-// 4. Check/illegal move handler
+// 3. Castling - can't castle if one of the moves is in danger
+// 4. Rewrite is_within_moveset to return legal moves given a coordinate
 
 const utility = new JavascriptToolbox();
 
@@ -10,9 +10,27 @@ class State {
   ptm = "White";
   move_history = [];
   orientation = "White";
+  castle_avail = [[true, true], [true, true]];
 
   constructor() {
     this.board = this.init_board();
+  }
+
+  deep_copy() {
+    let copy = new State();
+    copy.ptm = this.ptm;
+    copy.move_history = JSON.parse(JSON.stringify(this.move_history));
+    copy.orientation = this.orientation;
+    copy.castle_avail = JSON.parse(JSON.stringify(this.castle_avail));
+    copy.board = [];
+    for(let i = 0; i < this.board.length; i++) {
+      let row = [];
+      for(let j = 0; j < this.board[0].length; j++) {
+        row.push(new Piece(this.board[i][j].type, this.board[i][j].color));
+      }
+      copy.board.push(row);
+    }
+    return copy;
   }
 
   init_board() {
@@ -43,6 +61,7 @@ class State {
     this.board = this.init_board();
     this.ptm = "White";
     this.move_history = [];
+    this.castle_avail = [[true, true], [true, true]];
 
     if(this.orientation === "Black") {
       this.flip_board();
@@ -50,13 +69,18 @@ class State {
     }
   }
 
-  move_piece(coor1, coor2) {
+  move_piece(coor1, coor2, is_simulation) {
     const piece1 = this.board[coor1[0]][coor1[1]];
     const piece2 = this.board[coor2[0]][coor2[1]];
 
     if(piece1.color === this.ptm) {
-      // Validity and Legality check
-      if(!this.is_within_moveset(coor1, coor2) || !this.is_legal_move(coor1, coor2)) {
+      // Validity check
+      if(!this.is_within_moveset(coor1, coor2)) {
+        return
+      }
+
+      // Legality check
+      if(!is_simulation && !this.is_legal_move(coor1, coor2)) {
         return
       }
 
@@ -88,7 +112,7 @@ class State {
 
     function valid_moveset_handler(trans) {
       return function(trans) {
-        const trans_coor = [trans[0] + coor1[0], trans[1] + coor1[1]];
+        const trans_coor = utility.array_add(trans, coor1);
         if(trans_coor[0] >= 0 && trans_coor[0] < _this.board.length &&
            trans_coor[1] >= 0 && trans_coor[1] < _this.board[0].length &&
            _this.board[trans_coor[0]][trans_coor[1]].color !== piece.color) {
@@ -203,6 +227,51 @@ class State {
       return valid_moveset;
     }
 
+    function castle_handler() {
+      let castle_moveset = [[0, -2], [0, 2]];
+      const change_index = (piece.color === "White") ? 0 : 1;
+      let king_dest = undefined, check_piece = undefined, castle_unavail = false;
+
+      if(_this.castle_avail[change_index][0]) {
+        king_dest = utility.array_add(castle_moveset[0], coor1);
+        for(let i = coor1[1] - 1; i >= 1; i--) {
+          check_piece = _this.board[king_dest[0]][i];
+          if(check_piece.type !== "Empty" || check_piece.color !== "None") {
+            castle_unavail = true;
+            break;
+          }
+        }
+        if(!castle_unavail && utility.arrays_equal(king_dest, coor2)) {
+          // Swap rook into correct spot
+          const rook = _this.board[king_dest[0]][0];
+          _this.board[king_dest[0]][3] = rook;
+          _this.board[king_dest[0]][0] = new Piece("Empty", "None");
+          this.castle_avail[change_index] = [false, false];
+          return true;
+        }
+      }
+      king_dest = undefined, check_piece = undefined, castle_unavail = false;
+      if(_this.castle_avail[change_index][1]) {
+        king_dest = utility.array_add(castle_moveset[1], coor1);
+        for(let i = coor1[1] + 1; i <= _this.board.length - 2; i++) {
+          check_piece = _this.board[king_dest[0]][i];
+          if(check_piece.type !== "Empty" || check_piece.color !== "None") {
+            castle_unavail = true;
+            break;
+          }
+        }
+        if(!castle_unavail && utility.arrays_equal(king_dest, coor2)) {
+          // Swap rook into correct spot
+          const rook = _this.board[king_dest[0]][_this.board.length - 1];
+          _this.board[king_dest[0]][_this.board.length - 3] = rook;
+          _this.board[king_dest[0]][_this.board.length - 1] = new Piece("Empty", "None");
+          this.castle_avail[change_index] = [false, false];
+          return true;
+        }
+      }
+      return false;
+    }
+
     switch(piece.type) {
       case 'Pawn':
         valid_moveset = [[1, 0], [2, 0], [1, 1], [1, -1]];
@@ -239,7 +308,13 @@ class State {
         break;
       case 'Rook':
         valid_moveset = rook_handler();
-        return valid_moveset.find(ele => utility.arrays_equal(ele, coor2));
+        // If rook is moving, make castling unavailable for that side
+        if(valid_moveset.find(ele => utility.arrays_equal(ele, coor2))) {
+          const change_index_color = (piece.color === "White") ? 0 : 1;
+          const change_index_side = (coor2[1] === 0) ? 0 : 1;
+          this.castle_avail[change_index_color][change_index_side] = false;
+          return true;
+        }
         break;
       case 'Knight':
         valid_moveset = [[2, -1], [2, 1], [1, 2], [1, -2], [-1, 2], [-1, -2], [-2, -1], [-2, 1]];
@@ -255,7 +330,16 @@ class State {
                          [ 0, -1],          [ 0,  1],
                          [-1, -1], [-1, 0], [-1, -1]];
         valid_moveset = valid_moveset.map(valid_moveset_handler(valid_moveset));
-        return valid_moveset.find(ele => utility.arrays_equal(ele, coor2));
+
+        // Castle Handler
+        if(castle_handler()) return true;
+
+        // If king is moving, make castling unavailable
+        if(valid_moveset.find(ele => utility.arrays_equal(ele, coor2))) {
+          const change_index = (piece.color === "White") ? 0 : 1;
+          this.castle_avail[change_index] = [false, false];
+          return true;
+        }
         break;
       case 'Queen':
         valid_moveset = bishop_handler().concat(rook_handler());
@@ -266,11 +350,19 @@ class State {
     return false;
   }
 
+  // Returns true if piece is in danger
+  is_in_danger(piece) {
+    const piece_types = ['Pawn', 'Rook', 'Knight', 'Bishop', 'King', 'Queen'];
+
+    return false;
+  }
+
   // Simulates a turn and checks if move puts king in dange
   is_legal_move(coor1, coor2) {
-    let piece = this.board[coor1[0]][coor1[1]];
-
-    return true;
+    let simulation = this.deep_copy();
+    simulation.move_piece(coor1, coor2, true);
+    const king = simulation.board.find(ele => ele.type === "King" && ele.color === this.ptm);
+    return !simulation.is_in_danger(king);
   }
 }
 
@@ -327,7 +419,7 @@ class UIHandler {
               // Move piece
               const coor1 = _this.highlighted_square[0].id.split(",");
               const coor2 = this.id.split(",");
-              _this.state.move_piece(coor1, coor2);
+              _this.state.move_piece(coor1, coor2, false);
               _this.draw_pieces();
 
               // Unhighlight square
