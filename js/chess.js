@@ -1,7 +1,8 @@
 // TODO:
 // 1. Figure out dragging mechanics for pieces
-// 2. Pawn promotion
-// 3. Highlighted square shift when flip board
+// 2. Random moves AI
+// 3. UI for pawn promotion selection
+// 4. Legal moves for piece indicators (with grey circle)
 
 const utility = new JavascriptToolbox();
 
@@ -18,6 +19,10 @@ class State {
 
   constructor() {
     this.board = this.init_board();
+  }
+
+  checkmate_handler() {
+    alert(`Checkmate! Winner is ${this.ptm}.`);
   }
 
   deep_copy() {
@@ -90,13 +95,11 @@ class State {
     function castle_handler() {
       // Castling - Rook
       if(piece1.type === 'Rook') {
-        const change_index_color = (piece1.color === "White") ? 0 : 1;
         const change_index_side = (coor2[1] === 0) ? 0 : 1;
-        _this.castle_avail[change_index_color][change_index_side] = false;
+        _this.castle_avail[piece1.color][change_index_side] = false;
       }
       // Castling - King
       else if(piece1.type === 'King') {
-        const change_index = (piece1.color === "White") ? 0 : 1;
         // Left Castle
         if(_this.castle_info['Left'][0] && utility.arrays_equal(_this.castle_info['Left'][1], coor2)) {
           const king_dest = _this.castle_info['Left'][1];
@@ -113,12 +116,14 @@ class State {
           _this.board[king_dest[0]][_this.board.length - 1] = new Piece("Empty", "None");
           _this.castle_info['Right'] = [false, [-1, -1]];
         }
+        const change_index = (piece1.color === "White") ? 0 : 1;
         _this.castle_avail[change_index] = [false, false];
       }
     }
 
     function endgame_handler() {
       if(!is_simulation) {
+        const enemy_ptm = (_this.ptm === 'White') ? 'Black' : 'White';
         const king_info = _this.find_king(_this.ptm);
         // If King is in check or worse...
         if(_this.is_in_danger(king_info[0].color, king_info[1])) {
@@ -129,40 +134,47 @@ class State {
               if(check_piece.color === _this.ptm) {
                 const legal_moves = _this.get_legal_moves([y, x], true);
                 // Simulate all legal moves...
-                for(let move in legal_moves) {
-                  let simulation = _this.deep_copy();
-                  simulation.move_piece([y, x], move, true);
-                  const sim_king_info = simulation.find_king(_this.ptm);
-                  // If a legal move that removes the ally King from check is found...
-                  if(!simulation.is_in_danger(sim_king_info[0].color, sim_king_info[1])) {
-                    return false;
+                for(let move of legal_moves) {
+                  if(move !== undefined) {
+                    let simulation = _this.deep_copy();
+                    simulation.move_piece([y, x], move, true);
+                    const sim_king_info = simulation.find_king(_this.ptm);
+                    // If a legal move that removes the ally King from check is found...
+                    if(!simulation.is_in_danger(sim_king_info[0].color, sim_king_info[1])) {
+                      return false;
+                    }
                   }
                 }
               }
             }
           }
-          // Checkmate handler
-          const winner = (_this.ptm === "White") ? "Black" : "White";
-          alert(`Checkmate! Winner is ${winner}.`);
-          _this.reset();
           return true;
         }
       }
     }
 
-    if(piece1.color === this.ptm) {
-      // Endgame detection & handler
-      if(endgame_handler()) return true;
+    function pawn_promotion_handler() {
+      if(!is_simulation && piece1.type === 'Pawn') {
+        if(coor2[0] === 0 || coor2[0] === _this.board.length - 1) {
+          // TODO: UI for picking piece
+          piece1.type = 'Queen';
+        }
+      }
+    }
 
+    if(piece1.color === this.ptm) {
       // Validity check
       const valid_moveset = this.get_legal_moves(coor1, is_simulation);
-      if(!valid_moveset.find(ele => utility.arrays_equal(ele, coor2))) return
+      if(!valid_moveset.find(ele => utility.arrays_equal(ele, coor2))) return false;
 
       // Legality check
-      if(!is_simulation) if(!this.is_legal_move(coor1, coor2)) return
+      if(!is_simulation) if(!this.is_legal_move(coor1, coor2)) return false;
 
       // Castle info + Rook moving logic
       castle_handler();
+
+      // Pawn promotion logic
+      pawn_promotion_handler();
 
       // En passant helper
       this.delayed_moves.forEach(move => _this.board[move[0][0]][move[0][1]] = move[1]);
@@ -182,6 +194,9 @@ class State {
       // End of turn logic
       this.ptm = (this.ptm === "White") ? "Black" : "White";
       this.move_history.push([[piece1, coor1], [piece2, coor2]]);
+
+      // Endgame detection & handler
+      return endgame_handler();
     }
   }
 
@@ -482,9 +497,37 @@ class UIHandler {
     this.light_color = light_color;
     this.square_size = this.calc_square_size();
     this.highlighted_square = [null, ""];
+    this.history = [this.state.deep_copy()];
+    this.turn_num = 0;
 
     this.draw_board();
     this.draw_pieces();
+  }
+
+  reset() {
+    // Reset the UI Handler
+    this.highlighted_square = [null, ""];
+    this.history = this.history.splice(0, 1);
+    this.turn_num = 1;
+
+    // Reset the state
+    this.state.reset();
+
+    // Erase the board
+    const board = document.getElementById('board');
+    while (board.firstChild) { board.firstChild.remove(); }
+
+    // Redraw everything
+    this.draw_board();
+    this.draw_pieces();
+  }
+
+  undo() {
+    if(this.turn_num > 0) {
+      this.state = this.history[this.turn_num - 1].deep_copy();
+      this.turn_num -= 1;
+      this.draw_pieces();
+    }
   }
 
   calc_square_size() {
@@ -518,8 +561,19 @@ class UIHandler {
               // Move piece
               const coor1 = _this.highlighted_square[0].id.split(",");
               const coor2 = this.id.split(",");
-              _this.state.move_piece(coor1, coor2, false);
+              const checkmate = _this.state.move_piece(coor1, coor2, false);
+
+              // Move history logic
+              if(_this.history.length > _this.turn_num + 1) {
+                _this.history = _this.history.splice(0, _this.turn_num + 1);
+              }
+              _this.history.push(_this.state.deep_copy());
+              _this.turn_num += 1;
+
               _this.draw_pieces();
+
+              // This is triggering before state update. Figre out why?
+              if(checkmate) _this.state.checkmate_handler();
 
               // Unhighlight square
               _this.highlighted_square[0].className = _this.highlighted_square[1];
@@ -580,6 +634,13 @@ function main() {
   let drawer = new UIHandler(state, [8, 8], "#8b6914", "#deb887");
 
   // Switch Sides handler
-  document.getElementById('switch').addEventListener('click', function() { state.flip_board(); drawer.draw_pieces(); }, false);
-  document.getElementById('reset').addEventListener('click', function() { state.reset(); drawer.draw_pieces(); }, false);
+  document.getElementById('switch').addEventListener('click', function() {
+    if(drawer.highlighted_square[0] === null) {
+      drawer.state.flip_board(); drawer.draw_pieces();
+    } else {
+      alert('Cannot switch sides mid-move!');
+    }
+  }, false);
+  document.getElementById('reset').addEventListener('click', function() { drawer.reset(); }, false);
+  document.getElementById('undo').addEventListener('click', function() { drawer.undo(); }, false);
 }
