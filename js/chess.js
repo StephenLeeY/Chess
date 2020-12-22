@@ -1,8 +1,9 @@
 // TODO:
 // 1. Figure out dragging mechanics for pieces
 // 2. Random moves AI
-// 3. UI for pawn promotion selection
-// 4. Legal moves for piece indicators (with grey circle)
+// 3. UI for pawn promotion selection - currently auto-queen
+// 4. Pawns can always move two spaces? Fix!
+// 5. Pawn capturing en passant even when not supposed to. Fix!
 
 const utility = new JavascriptToolbox();
 
@@ -11,10 +12,7 @@ class State {
   move_history = [];
   orientation = "White";
   delayed_moves = [];
-
-  // [castle_left_avail, castle_right_avail]
   castle_avail = {'White' : [true, true], 'Black' : [true, true]};
-  // [castle_ready, king_dest, change_index]
   castle_info = {'Left' : [false, [-1, -1]], 'Right' : [false, [-1, -1]]};
 
   constructor() {
@@ -40,7 +38,7 @@ class State {
     }
     if(this.delayed_moves.length !== 0) {
       copy.delayed_moves = [];
-      for(let move in this.delayed_moves) {
+      for(let move of this.delayed_moves) {
         copy.delayed_moves.push([JSON.parse(JSON.stringify(move[0])), new Piece(move[1].type, move[1].color)]);
       }
     }
@@ -141,14 +139,14 @@ class State {
                     const sim_king_info = simulation.find_king(_this.ptm);
                     // If a legal move that removes the ally King from check is found...
                     if(!simulation.is_in_danger(sim_king_info[0].color, sim_king_info[1])) {
-                      return false;
+                      return;
                     }
                   }
                 }
               }
             }
           }
-          return true;
+          return 'Checkmate';
         }
       }
     }
@@ -173,9 +171,6 @@ class State {
       // Castle info + Rook moving logic
       castle_handler();
 
-      // Pawn promotion logic
-      pawn_promotion_handler();
-
       // En passant helper
       this.delayed_moves.forEach(move => _this.board[move[0][0]][move[0][1]] = move[1]);
       this.delayed_moves = [];
@@ -189,6 +184,14 @@ class State {
       else {
         this.board[coor2[0]][coor2[1]] = piece1;
         this.board[coor1[0]][coor1[1]] = new Piece("Empty", "None");
+      }
+
+      // Pawn promotion logic
+      // pawn_promotion_handler();
+      if(!is_simulation && piece1.type === 'Pawn') {
+        if(coor2[0] === 0 || coor2[0] === _this.board.length - 1) {
+          return "Promotion";
+        }
       }
 
       // End of turn logic
@@ -490,13 +493,27 @@ class Piece {
 
 class UIHandler {
   constructor(state, board_dims, dark_color, light_color) {
+    const _this = this;
+
+    function calc_square_size() {
+      let boundary = (window.innerWidth > window.innerHeight) ? window.innerHeight : window.innerWidth;
+      boundary *= 0.75;
+      let largest_dim = (_this.board_dims[0] > _this.board_dims[1]) ? _this.board_dims[0] : _this.board_dims[1];
+
+      _this.board_div.style.width = boundary + "px";
+      _this.board_div.style.height = boundary + "px";
+
+      return boundary / largest_dim;
+    }
+
     this.board_div = document.getElementById('board');
     this.state = state;
     this.board_dims = board_dims;
     this.dark_color = dark_color;
     this.light_color = light_color;
-    this.square_size = this.calc_square_size();
+    this.square_size = calc_square_size();
     this.highlighted_square = [null, ""];
+    this.indicated_squares = [];
     this.history = [this.state.deep_copy()];
     this.turn_num = 0;
 
@@ -507,6 +524,7 @@ class UIHandler {
   reset() {
     // Reset the UI Handler
     this.highlighted_square = [null, ""];
+    this.indicated_squares = [];
     this.history = this.history.splice(0, 1);
     this.turn_num = 1;
 
@@ -530,15 +548,32 @@ class UIHandler {
     }
   }
 
-  calc_square_size() {
-    let boundary = (window.innerWidth > window.innerHeight) ? window.innerHeight : window.innerWidth;
-    boundary *= 0.75;
-    let largest_dim = (this.board_dims[0] > this.board_dims[1]) ? this.board_dims[0] : this.board_dims[1];
+  unhighlight() {
+    // Reset highlighted square
+    this.highlighted_square = [null, ""];
 
-    this.board_div.style.width = boundary + "px";
-    this.board_div.style.height = boundary + "px";
+    // Erase the board
+    const board = document.getElementById('board');
+    while (board.firstChild) { board.firstChild.remove(); }
 
-    return boundary / largest_dim;
+    // Redraw everything
+    this.draw_board();
+    this.draw_pieces();
+  }
+
+  create_indicator() {
+    let circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute('cx', '50%');
+    circle.setAttribute('cy', '50%');
+    circle.setAttribute('r', '17.5%');
+    circle.setAttribute('fill', 'rgba(0, 0, 0, 0.3)');
+
+    let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute('width', '100%');
+    svg.setAttribute('height', '100%');
+    svg.appendChild(circle);
+
+    return svg;
   }
 
   draw_board() {
@@ -561,7 +596,49 @@ class UIHandler {
               // Move piece
               const coor1 = _this.highlighted_square[0].id.split(",");
               const coor2 = this.id.split(",");
-              const checkmate = _this.state.move_piece(coor1, coor2, false);
+              const code = _this.state.move_piece(coor1, coor2, false);
+
+              // Pawn promotion logic
+              if(code === 'Promotion') {
+                _this.highlighted_square[0].className = _this.highlighted_square[1];
+                _this.highlighted_square = [null, ""];
+                _this.draw_pieces();
+
+                this.removeChild(this.lastChild);
+
+                const piece_color = _this.state.ptm;
+                const promotion_selection = ['Queen', 'Rook', 'Bishop', 'Knight'];
+                let promotion_ui = document.createElement('div');
+                promotion_ui.className = 'promotionUI';
+                promotion_ui.width = _this.square_size + "px";
+                promotion_ui.height = _this.square_size * 4 + "px";
+                promotion_ui.border = '0.1 px solid black';
+
+                for(let piece_name of promotion_selection) {
+                  let promotion_square = document.createElement('div');
+                  promotion_square.className = 'promotionSquare';
+                  promotion_square.width = _this.square_size + "px";
+                  promotion_square.height = _this.square_size + "px";
+
+                  // TODO: Add onclick handler
+
+                  let promotion_piece = document.createElement("img");
+                  promotion_piece.className = "promotion-piece";
+                  promotion_piece.style.width = _this.square_size + "px";
+                  promotion_piece.style.height = _this.square_size + "px";
+
+                  const piece_object = _this.state.board[coor1[0]][coor1[1]];
+                  promotion_piece.src = "Resources/Pieces/" + piece_color + "_" + piece_name + ".png";
+
+                  promotion_square.appendChild(promotion_piece);
+                  promotion_ui.appendChild(promotion_square);
+                }
+                this.style.zIndex = '1';
+                this.appendChild(promotion_ui);
+
+                // TODO: Have program wait until player chooses a piece to promote to.
+                return;
+              }
 
               // Move history logic
               if(_this.history.length > _this.turn_num + 1) {
@@ -573,7 +650,7 @@ class UIHandler {
               _this.draw_pieces();
 
               // This is triggering before state update. Figre out why?
-              if(checkmate) _this.state.checkmate_handler();
+              if(code === 'Checkmate') _this.state.checkmate_handler();
 
               // Unhighlight square
               _this.highlighted_square[0].className = _this.highlighted_square[1];
@@ -584,6 +661,15 @@ class UIHandler {
               // Store highlighted square information
               _this.highlighted_square = [this, this.className];
               this.className = "highlightedSquare";
+
+              // Show legal moves
+              const legal_moves = _this.state.get_legal_moves([y, x], true);
+              for(let move of legal_moves) {
+                if(move !== undefined && _this.state.board[move[0]][move[1]].type === 'Empty') {
+                  _this.indicated_squares.push(move);
+                  _this.board_div.children[move[0]].children[move[1]].appendChild(_this.create_indicator());
+                }
+              }
             }
           },
         false);
@@ -639,8 +725,9 @@ function main() {
       drawer.state.flip_board(); drawer.draw_pieces();
     } else {
       alert('Cannot switch sides mid-move!');
+      drawer.unhighlight();
     }
   }, false);
   document.getElementById('reset').addEventListener('click', function() { drawer.reset(); }, false);
-  document.getElementById('undo').addEventListener('click', function() { drawer.undo(); }, false);
+  document.getElementById('undo').addEventListener('click', function() { drawer.undo(); drawer.unhighlight(); }, false);
 }
