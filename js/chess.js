@@ -1,9 +1,7 @@
 // TODO:
 // 1. Figure out dragging mechanics for pieces
 // 2. Random moves AI
-// 3. UI for pawn promotion selection - currently auto-queen
-// 4. Pawns can always move two spaces? Fix!
-// 5. Pawn capturing en passant even when not supposed to. Fix!
+// 3. Pawn promotion UI - disable all other onclick events while ui open
 
 const utility = new JavascriptToolbox();
 
@@ -69,6 +67,16 @@ class State {
     this.board.map((row) => row.reverse());
     this.board = this.board.reverse();
     this.orientation = (this.orientation === "White") ? "Black" : "White";
+
+    let board_len = this.board.length - 1;
+    function flip_coor(coor) {
+      return [board_len - coor[0], board_len - coor[1]];
+    }
+
+    for(let i = 0; i < this.move_history.length; i++) {
+      this.move_history[i][0][1] = flip_coor(this.move_history[i][0][1]);
+      this.move_history[i][1][1] = flip_coor(this.move_history[i][1][1]);
+    }
   }
 
   reset() {
@@ -81,6 +89,16 @@ class State {
       this.flip_board();
       this.orientation = (this.orientation === "White") ? "Black" : "White";
     }
+  }
+
+  freq_move_history(piece) {
+    let counter = 0;
+    for(let move of this.move_history) {
+      if(move[0][0] === piece) {
+        counter++;
+      }
+    }
+    return counter;
   }
 
   move_piece(coor1, coor2, is_simulation) {
@@ -172,8 +190,14 @@ class State {
       castle_handler();
 
       // En passant helper
-      this.delayed_moves.forEach(move => _this.board[move[0][0]][move[0][1]] = move[1]);
-      this.delayed_moves = [];
+      if(this.delayed_moves.length !== 0) {
+        const delete_piece = this.board[coor1[0]][coor1[1] + coor2[1] - coor1[1]];
+        if(piece1.type === 'Pawn' && piece2.type === 'Empty' &&
+           delete_piece.type === 'Pawn' && delete_piece.color !== piece1.color) {
+          this.delayed_moves.forEach(move => _this.board[move[0][0]][move[0][1]] = move[1]);
+          this.delayed_moves = [];
+        }
+      }
 
       // Move Handler
       if(piece2.type === "Empty" && piece2.color === "None") {
@@ -186,17 +210,16 @@ class State {
         this.board[coor1[0]][coor1[1]] = new Piece("Empty", "None");
       }
 
+      // End of turn logic
+      this.ptm = (this.ptm === "White") ? "Black" : "White";
+      this.move_history.push([[piece1, coor1], [piece2, coor2]]);
+
       // Pawn promotion logic
-      // pawn_promotion_handler();
       if(!is_simulation && piece1.type === 'Pawn') {
         if(coor2[0] === 0 || coor2[0] === _this.board.length - 1) {
           return "Promotion";
         }
       }
-
-      // End of turn logic
-      this.ptm = (this.ptm === "White") ? "Black" : "White";
-      this.move_history.push([[piece1, coor1], [piece2, coor2]]);
 
       // Endgame detection & handler
       return endgame_handler();
@@ -231,6 +254,7 @@ class State {
         // and the desired move is in the correct spot
         const target_y = (_this.orientation === piece.color) ? last_move[1][1][0] - 1 : parseInt(last_move[1][1][0]) + 1;
         if(parseInt(last_move[1][1][1]) === checking_move[1] && target_y === checking_move[0]) {
+          if(!is_simulation) console.log('2');
           if(!is_simulation) _this.delayed_moves.push([[last_move[1][1][0], last_move[1][1][1]], new Piece("Empty", "None")]);
           return checking_move;
         }
@@ -399,7 +423,7 @@ class State {
           const target_piece = this.board[valid_moveset[1][0]][valid_moveset[1][1]];
           if(blocking_piece.type === "Empty" && blocking_piece.color === "None" &&
              target_piece.type === "Empty" && target_piece.color === "None") {
-            return_moveset.push(valid_moveset[1]);
+            if(this.freq_move_history(piece) === 0) return_moveset.push(valid_moveset[1]);
           }
         }
 
@@ -563,16 +587,8 @@ class UIHandler {
 
   create_indicator() {
     let circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    circle.setAttribute('cx', '50%');
-    circle.setAttribute('cy', '50%');
-    circle.setAttribute('r', '17.5%');
-    circle.setAttribute('fill', 'rgba(0, 0, 0, 0.3)');
-
     let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute('width', '100%');
-    svg.setAttribute('height', '100%');
     svg.appendChild(circle);
-
     return svg;
   }
 
@@ -600,19 +616,21 @@ class UIHandler {
 
               // Pawn promotion logic
               if(code === 'Promotion') {
-                _this.highlighted_square[0].className = _this.highlighted_square[1];
-                _this.highlighted_square = [null, ""];
-                _this.draw_pieces();
-
                 this.removeChild(this.lastChild);
 
-                const piece_color = _this.state.ptm;
+                const this_square = this;
+                const piece_color = (_this.state.ptm === 'White') ? 'Black' : 'White';
                 const promotion_selection = ['Queen', 'Rook', 'Bishop', 'Knight'];
                 let promotion_ui = document.createElement('div');
                 promotion_ui.className = 'promotionUI';
+                promotion_ui.id = 'promotionUI';
                 promotion_ui.width = _this.square_size + "px";
                 promotion_ui.height = _this.square_size * 4 + "px";
                 promotion_ui.border = '0.1 px solid black';
+                if(piece_color !== _this.state.orientation) {
+                  promotion_ui.style.position = 'relative';
+                  promotion_ui.style.top = _this.square_size * -3 + "px";
+                }
 
                 for(let piece_name of promotion_selection) {
                   let promotion_square = document.createElement('div');
@@ -621,6 +639,14 @@ class UIHandler {
                   promotion_square.height = _this.square_size + "px";
 
                   // TODO: Add onclick handler
+                  promotion_square.addEventListener('click',
+                    function() {
+                      const promote_piece_info = this.firstChild.id.split(",");
+                      _this.state.board[y][x] = new Piece(promote_piece_info[1], promote_piece_info[0]);
+                      this_square.removeChild(this_square.firstChild);
+                      this_square.appendChild(this.firstChild);
+                      _this.draw_pieces();
+                    });
 
                   let promotion_piece = document.createElement("img");
                   promotion_piece.className = "promotion-piece";
@@ -629,14 +655,24 @@ class UIHandler {
 
                   const piece_object = _this.state.board[coor1[0]][coor1[1]];
                   promotion_piece.src = "Resources/Pieces/" + piece_color + "_" + piece_name + ".png";
+                  promotion_piece.id = piece_color + "," + piece_name;
 
                   promotion_square.appendChild(promotion_piece);
-                  promotion_ui.appendChild(promotion_square);
+                  if(piece_color === _this.state.orientation) {
+                    promotion_ui.appendChild(promotion_square);
+                  } else {
+                    promotion_ui.insertBefore(promotion_square, promotion_ui.firstChild);
+                  }
                 }
                 this.style.zIndex = '1';
                 this.appendChild(promotion_ui);
 
                 // TODO: Have program wait until player chooses a piece to promote to.
+                $(document).on('click', function(event) {
+                  if (!$(event.target).closest('#promotionUI').length) {
+                    // Do nothing?
+                  }
+                });
                 return;
               }
 
