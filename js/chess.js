@@ -1,7 +1,7 @@
 // TODO:
 // 1. Figure out dragging mechanics for pieces
 // 2. Random moves AI
-// 3. Pawn promotion UI - disable all other onclick events while ui open
+// 3. Pawn promotion bugs - highlight and onclick and ptm
 
 const utility = new JavascriptToolbox();
 
@@ -101,7 +101,7 @@ class State {
     return counter;
   }
 
-  move_piece(coor1, coor2, is_simulation) {
+  move_piece(coor1, coor2, is_simulation, ignore_pawn_promotion=false) {
     const piece1 = this.board[coor1[0]][coor1[1]];
     const piece2 = this.board[coor2[0]][coor2[1]];
     const _this = this;
@@ -215,7 +215,7 @@ class State {
       this.move_history.push([[piece1, coor1], [piece2, coor2]]);
 
       // Pawn promotion logic
-      if(!is_simulation && piece1.type === 'Pawn') {
+      if(!is_simulation && piece1.type === 'Pawn' && !ignore_pawn_promotion) {
         if(coor2[0] === 0 || coor2[0] === _this.board.length - 1) {
           return "Promotion";
         }
@@ -254,7 +254,6 @@ class State {
         // and the desired move is in the correct spot
         const target_y = (_this.orientation === piece.color) ? last_move[1][1][0] - 1 : parseInt(last_move[1][1][0]) + 1;
         if(parseInt(last_move[1][1][1]) === checking_move[1] && target_y === checking_move[0]) {
-          if(!is_simulation) console.log('2');
           if(!is_simulation) _this.delayed_moves.push([[last_move[1][1][0], last_move[1][1][1]], new Piece("Empty", "None")]);
           return checking_move;
         }
@@ -513,6 +512,13 @@ class Piece {
     this.type = type;
     this.color = color;
   }
+
+  deep_copy() {
+    let copy = new Piece();
+    copy.type = this.type;
+    copy.color = this.color;
+    return copy;
+  }
 }
 
 class UIHandler {
@@ -531,6 +537,7 @@ class UIHandler {
     }
 
     this.board_div = document.getElementById('board');
+    this.output_div = document.getElementById('output');
     this.state = state;
     this.board_dims = board_dims;
     this.dark_color = dark_color;
@@ -543,6 +550,7 @@ class UIHandler {
 
     this.draw_board();
     this.draw_pieces();
+    this.draw_display();
   }
 
   reset() {
@@ -592,6 +600,192 @@ class UIHandler {
     return svg;
   }
 
+  // Remove click event handlers for everything except the promotion UI
+  // TODO: If possible, find a better method of doing this.
+  disable_board() {
+    for(let y = 0; y < this.board_dims[0]; y++) {
+      for(let x = 0; x < this.board_dims[1]; x++) {
+        const square = this.board_div.children[y].children[x];
+        if(square.children.length > 0 && square.children[0].className !== 'promotionUI') {
+          const square_clone = square.cloneNode(true);
+          square.parentNode.replaceChild(square_clone, square);
+        }
+      }
+    }
+  }
+
+  // Add click event handlers to everything again.
+  enable_board() {
+    const _this = this;
+    for(let y = 0; y < this.board_dims[0]; y++) {
+      for(let x = 0; x < this.board_dims[1]; x++) {
+        const square = this.board_div.children[y].children[x];
+        if(y == 0 && x == 1) console.log(square);
+        square.addEventListener('click', function() {
+          _this.move_click_handler(square);
+        }, false);
+      }
+    }
+  }
+
+  promotion_handler(square, coor1, coor2, move_history_len) {
+    // Save and remove piece on promotion square
+    const previous_piece = this.history[this.history.length - 1].board[coor2[0]][coor2[1]].deep_copy();
+    square.removeChild(square.lastChild);
+
+    const piece_color = (this.state.ptm === 'White') ? 'Black' : 'White';
+    const promotion_selection = ['Queen', 'Rook', 'Bishop', 'Knight'];
+
+    // Create promotion UI
+    let promotion_ui = document.createElement('div');
+    promotion_ui.className = 'promotionUI';
+    promotion_ui.id = 'promotionUI';
+    promotion_ui.width = this.square_size + "px";
+    promotion_ui.height = this.square_size * 4 + "px";
+    promotion_ui.border = '0.1 px solid black';
+    if(piece_color !== this.state.orientation) {
+      promotion_ui.style.position = 'relative';
+      promotion_ui.style.top = this.square_size * -3 + "px";
+    }
+
+    // Display promotion UI
+    for(let piece_name of promotion_selection) {
+      let promotion_square = document.createElement('div');
+      promotion_square.className = 'promotionSquare';
+      promotion_square.width = this.square_size + "px";
+      promotion_square.height = this.square_size + "px";
+
+      const _this = this;
+      promotion_square.addEventListener('click',
+        function() {
+          // Update pieces
+          const promote_piece_info = promotion_square.firstChild.id.split(",");
+          const target_spot = square.id.split(",");
+
+          // Setup board to make promotion a valid move
+          const previous_pawn = _this.state.board[coor1[0]][coor1[1]].deep_copy();
+          _this.state.board[target_spot[0]][target_spot[1]] = previous_piece;
+          _this.state.board[coor1[0]][coor1[1]] = new Piece(promote_piece_info[1], promote_piece_info[0]);
+
+          // Make move
+          const code = _this.state.move_piece(coor1, target_spot, false, true);
+
+          // Promotion was invalid
+          if(code === false) {
+            _this.state.board[target_spot[0]][target_spot[1]] = previous_piece;
+            _this.state.board[coor1[0]][coor1[1]] = previous_pawn;
+          }
+
+          // Move history logic
+          if(code !== false) {
+            if(_this.history.length > _this.turn_num + 1) {
+              _this.history = _this.history.splice(0, _this.turn_num + 1);
+            }
+            _this.history.push(_this.state.deep_copy());
+            _this.turn_num += 1;
+
+            _this.draw_pieces();
+
+            if(code === 'Checkmate') _this.state.checkmate_handler();
+          }
+
+          if(move_history_len + 1 === _this.state.move_history.length) {
+            const piece = _this.state.board[coor2[0]][coor2[1]];
+            _this.output_div.innerText += `\
+            [${_this.state.move_history.length}]\
+            ${piece.color} ${piece.type} to\
+            ${String.fromCharCode(parseInt(coor2[1]) + 65)}` +
+            `${parseInt(8 - coor2[0])}\n`;
+          }
+
+          // Fix board
+          _this.enable_board();
+          square.style.zIndex = '0';
+        });
+
+      let promotion_piece = document.createElement("img");
+      promotion_piece.className = "promotion-piece";
+      promotion_piece.style.width = this.square_size + "px";
+      promotion_piece.style.height = this.square_size + "px";
+
+      const piece_object = this.state.board[coor1[0]][coor1[1]];
+      promotion_piece.src = "Resources/Pieces/" + piece_color + "_" + piece_name + ".png";
+      promotion_piece.id = piece_color + "," + piece_name;
+
+      promotion_square.appendChild(promotion_piece);
+      if(piece_color === this.state.orientation) {
+        promotion_ui.appendChild(promotion_square);
+      } else {
+        promotion_ui.insertBefore(promotion_square, promotion_ui.firstChild);
+      }
+    }
+    square.style.zIndex = '1';
+    square.appendChild(promotion_ui);
+
+    // Unhighlight square
+    this.highlighted_square[0].className = this.highlighted_square[1];
+    this.highlighted_square = [null, ""];
+
+    this.disable_board();
+    return 'Promoted';
+  }
+
+  move_click_handler(square) {
+    console.log(square);
+    if(this.highlighted_square[0] !== null) {
+      // Move piece
+      const coor1 = this.highlighted_square[0].id.split(",");
+      const coor2 = square.id.split(",");
+      const move_history_len = this.state.move_history.length;
+      const code = this.state.move_piece(coor1, coor2, false);
+
+      // Pawn promotion logic
+      if(code === 'Promotion' &&
+         this.promotion_handler(square, coor1, coor2, move_history_len) === 'Promoted') return;
+
+      // Move history logic
+      if(this.history.length > this.turn_num + 1) {
+        this.history = this.history.splice(0, this.turn_num + 1);
+      }
+      this.history.push(this.state.deep_copy());
+      this.turn_num += 1;
+
+      this.draw_pieces();
+
+      // This is triggering before state update. Figre out why?
+      if(code === 'Checkmate') this.state.checkmate_handler();
+
+      // Unhighlight square
+      this.highlighted_square[0].className = this.highlighted_square[1];
+
+      // Reset
+      this.highlighted_square = [null, ""];
+
+      if(move_history_len + 1 === this.state.move_history.length) {
+        const piece = this.state.board[coor2[0]][coor2[1]];
+        this.output_div.innerText += `\
+        [${this.state.move_history.length}]\
+        ${piece.color} ${piece.type} to\
+        ${String.fromCharCode(parseInt(coor2[1]) + 65)}` +
+        `${parseInt(8 - coor2[0])}\n`;
+      }
+    } else if(square.children.length > 0) {
+      // Store highlighted square information
+      this.highlighted_square = [square, square.className];
+      square.className = "highlightedSquare";
+
+      // Show legal moves
+      const square_coor = square.id.split(',');
+      const legal_moves = this.state.get_legal_moves([square_coor[0], square_coor[1]], true);
+      for(let move of legal_moves) {
+        if(move !== undefined && this.state.board[move[0]][move[1]].type === 'Empty') {
+          this.indicated_squares.push(move);
+          this.board_div.children[move[0]].children[move[1]].appendChild(this.create_indicator());
+        }
+      }
+    }
+  }
+
   draw_board() {
     for(let y = 0; y < this.board_dims[0]; y++) {
       const row = document.createElement("div");
@@ -604,111 +798,10 @@ class UIHandler {
         square.style.width = this.square_size + "px";
         square.style.height = this.square_size + "px";
 
-        // Move handler
-        let _this = this;
-        square.addEventListener('click',
-          function() {
-            if(_this.highlighted_square[0] !== null) {
-              // Move piece
-              const coor1 = _this.highlighted_square[0].id.split(",");
-              const coor2 = this.id.split(",");
-              const code = _this.state.move_piece(coor1, coor2, false);
-
-              // Pawn promotion logic
-              if(code === 'Promotion') {
-                this.removeChild(this.lastChild);
-
-                const this_square = this;
-                const piece_color = (_this.state.ptm === 'White') ? 'Black' : 'White';
-                const promotion_selection = ['Queen', 'Rook', 'Bishop', 'Knight'];
-                let promotion_ui = document.createElement('div');
-                promotion_ui.className = 'promotionUI';
-                promotion_ui.id = 'promotionUI';
-                promotion_ui.width = _this.square_size + "px";
-                promotion_ui.height = _this.square_size * 4 + "px";
-                promotion_ui.border = '0.1 px solid black';
-                if(piece_color !== _this.state.orientation) {
-                  promotion_ui.style.position = 'relative';
-                  promotion_ui.style.top = _this.square_size * -3 + "px";
-                }
-
-                for(let piece_name of promotion_selection) {
-                  let promotion_square = document.createElement('div');
-                  promotion_square.className = 'promotionSquare';
-                  promotion_square.width = _this.square_size + "px";
-                  promotion_square.height = _this.square_size + "px";
-
-                  // TODO: Add onclick handler
-                  promotion_square.addEventListener('click',
-                    function() {
-                      const promote_piece_info = this.firstChild.id.split(",");
-                      _this.state.board[y][x] = new Piece(promote_piece_info[1], promote_piece_info[0]);
-                      this_square.removeChild(this_square.firstChild);
-                      this_square.appendChild(this.firstChild);
-                      _this.draw_pieces();
-                    });
-
-                  let promotion_piece = document.createElement("img");
-                  promotion_piece.className = "promotion-piece";
-                  promotion_piece.style.width = _this.square_size + "px";
-                  promotion_piece.style.height = _this.square_size + "px";
-
-                  const piece_object = _this.state.board[coor1[0]][coor1[1]];
-                  promotion_piece.src = "Resources/Pieces/" + piece_color + "_" + piece_name + ".png";
-                  promotion_piece.id = piece_color + "," + piece_name;
-
-                  promotion_square.appendChild(promotion_piece);
-                  if(piece_color === _this.state.orientation) {
-                    promotion_ui.appendChild(promotion_square);
-                  } else {
-                    promotion_ui.insertBefore(promotion_square, promotion_ui.firstChild);
-                  }
-                }
-                this.style.zIndex = '1';
-                this.appendChild(promotion_ui);
-
-                // TODO: Have program wait until player chooses a piece to promote to.
-                $(document).on('click', function(event) {
-                  if (!$(event.target).closest('#promotionUI').length) {
-                    // Do nothing?
-                  }
-                });
-                return;
-              }
-
-              // Move history logic
-              if(_this.history.length > _this.turn_num + 1) {
-                _this.history = _this.history.splice(0, _this.turn_num + 1);
-              }
-              _this.history.push(_this.state.deep_copy());
-              _this.turn_num += 1;
-
-              _this.draw_pieces();
-
-              // This is triggering before state update. Figre out why?
-              if(code === 'Checkmate') _this.state.checkmate_handler();
-
-              // Unhighlight square
-              _this.highlighted_square[0].className = _this.highlighted_square[1];
-
-              // Reset
-              _this.highlighted_square = [null, ""];
-            } else if(this.children.length > 0) {
-              // Store highlighted square information
-              _this.highlighted_square = [this, this.className];
-              this.className = "highlightedSquare";
-
-              // Show legal moves
-              const legal_moves = _this.state.get_legal_moves([y, x], true);
-              for(let move of legal_moves) {
-                if(move !== undefined && _this.state.board[move[0]][move[1]].type === 'Empty') {
-                  _this.indicated_squares.push(move);
-                  _this.board_div.children[move[0]].children[move[1]].appendChild(_this.create_indicator());
-                }
-              }
-            }
-          },
-        false);
+        const _this = this;
+        square.addEventListener('click', function() {
+          _this.move_click_handler(square);
+        }, false);
 
         row.appendChild(square);
       }
@@ -748,6 +841,15 @@ class UIHandler {
         this.board_div.children[y].children[x].appendChild(piece);
       }
     }
+  }
+
+  draw_display() {
+    const game_display_div = document.getElementById('game-display')
+    const info_display_div = document.getElementById('info-display');
+    info_display_div.style.height = game_display_div.offsetHeight + 'px';
+    info_display_div.style.width = (window.innerWidth - game_display_div.offsetWidth) / 2 + 'px';
+
+    this.output_div.style.height = this.board_div.offsetHeight;
   }
 }
 

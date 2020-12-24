@@ -17,11 +17,18 @@
   <body>
     <div class="main">
       <div class="content">
-        <div class="board" id="board"></div>
-        <div class="toolbar row">
-          <button type="button" class="btn btn-light switch" id="switch">Switch Sides</button>
-          <button type="button" class="btn btn-light reset" id="reset">Reset</button>
-          <button type="button" class="btn btn-light undo" id="undo">Undo</button>
+        <div class="game-display" id="game-display">
+          <div class="board" id="board"></div>
+          <div class="toolbar" id="toolbar">
+            <button type="button" class="btn btn-light switch" id="switch">Switch Sides</button>
+            <button type="button" class="btn btn-light reset" id="reset">Reset</button>
+            <button type="button" class="btn btn-light undo" id="undo">Undo</button>
+          </div>
+        </div>
+        <div class="info-display" id="info-display">
+          <div class="info">
+            <p id="output"></p>
+          </div>
         </div>
       </div>
     </div>
