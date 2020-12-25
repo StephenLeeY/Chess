@@ -1,7 +1,5 @@
 // TODO:
-// 1. Figure out dragging mechanics for pieces
-// 2. Random moves AI
-// 3. Pawn promotion bugs - highlight and onclick and ptm
+// 1. Random moves AI
 
 const utility = new JavascriptToolbox();
 
@@ -186,6 +184,13 @@ class State {
       // Legality check
       if(!is_simulation) if(!this.is_legal_move(coor1, coor2)) return false;
 
+      // Pawn promotion logic
+      if(!is_simulation && piece1.type === 'Pawn' && !ignore_pawn_promotion) {
+        if(coor2[0] === 0 || coor2[0] === _this.board.length - 1) {
+          return "Promotion";
+        }
+      }
+
       // Castle info + Rook moving logic
       castle_handler();
 
@@ -213,13 +218,6 @@ class State {
       // End of turn logic
       this.ptm = (this.ptm === "White") ? "Black" : "White";
       this.move_history.push([[piece1, coor1], [piece2, coor2]]);
-
-      // Pawn promotion logic
-      if(!is_simulation && piece1.type === 'Pawn' && !ignore_pawn_promotion) {
-        if(coor2[0] === 0 || coor2[0] === _this.board.length - 1) {
-          return "Promotion";
-        }
-      }
 
       // Endgame detection & handler
       return endgame_handler();
@@ -522,7 +520,7 @@ class Piece {
 }
 
 class UIHandler {
-  constructor(state, board_dims, dark_color, light_color) {
+  constructor(state, dark_color, light_color) {
     const _this = this;
 
     function calc_square_size() {
@@ -539,9 +537,9 @@ class UIHandler {
     this.board_div = document.getElementById('board');
     this.output_div = document.getElementById('output');
     this.state = state;
-    this.board_dims = board_dims;
-    this.dark_color = dark_color;
-    this.light_color = light_color;
+    this.board_dims = [state.board.length, state.board[0].length];
+    this.dark_color = "#8b6914";
+    this.light_color = "#deb887";
     this.square_size = calc_square_size();
     this.highlighted_square = [null, ""];
     this.indicated_squares = [];
@@ -551,6 +549,18 @@ class UIHandler {
     this.draw_board();
     this.draw_pieces();
     this.draw_display();
+
+    // Switch Sides handler
+    document.getElementById('switch').addEventListener('click', function() {
+      if(_this.highlighted_square[0] === null) {
+        _this.state.flip_board(); _this.draw_pieces();
+      } else {
+        alert('Cannot switch sides mid-move!');
+        _this.unhighlight();
+      }
+    }, false);
+    document.getElementById('reset').addEventListener('click', function() { _this.reset(); }, false);
+    document.getElementById('undo').addEventListener('click', function() { _this.undo(); _this.unhighlight(); }, false);
   }
 
   reset() {
@@ -606,7 +616,7 @@ class UIHandler {
     for(let y = 0; y < this.board_dims[0]; y++) {
       for(let x = 0; x < this.board_dims[1]; x++) {
         const square = this.board_div.children[y].children[x];
-        if(square.children.length > 0 && square.children[0].className !== 'promotionUI') {
+        if(!(square.children.length > 0 && square.children[0].className === 'promotionUI')) {
           const square_clone = square.cloneNode(true);
           square.parentNode.replaceChild(square_clone, square);
         }
@@ -620,7 +630,6 @@ class UIHandler {
     for(let y = 0; y < this.board_dims[0]; y++) {
       for(let x = 0; x < this.board_dims[1]; x++) {
         const square = this.board_div.children[y].children[x];
-        if(y == 0 && x == 1) console.log(square);
         square.addEventListener('click', function() {
           _this.move_click_handler(square);
         }, false);
@@ -630,10 +639,10 @@ class UIHandler {
 
   promotion_handler(square, coor1, coor2, move_history_len) {
     // Save and remove piece on promotion square
-    const previous_piece = this.history[this.history.length - 1].board[coor2[0]][coor2[1]].deep_copy();
+    const previous_piece = this.state.board[coor2[0]][coor2[1]].deep_copy();
     square.removeChild(square.lastChild);
 
-    const piece_color = (this.state.ptm === 'White') ? 'Black' : 'White';
+    const piece_color = this.state.ptm;
     const promotion_selection = ['Queen', 'Rook', 'Bishop', 'Knight'];
 
     // Create promotion UI
@@ -731,7 +740,6 @@ class UIHandler {
   }
 
   move_click_handler(square) {
-    console.log(square);
     if(this.highlighted_square[0] !== null) {
       // Move piece
       const coor1 = this.highlighted_square[0].id.split(",");
@@ -740,8 +748,9 @@ class UIHandler {
       const code = this.state.move_piece(coor1, coor2, false);
 
       // Pawn promotion logic
-      if(code === 'Promotion' &&
-         this.promotion_handler(square, coor1, coor2, move_history_len) === 'Promoted') return;
+      if(code === 'Promotion') {
+        return this.promotion_handler(square, coor1, coor2, move_history_len);
+      }
 
       // Move history logic
       if(this.history.length > this.turn_num + 1) {
@@ -760,6 +769,7 @@ class UIHandler {
 
       // Reset
       this.highlighted_square = [null, ""];
+      this.indicated_squares = [];
 
       if(move_history_len + 1 === this.state.move_history.length) {
         const piece = this.state.board[coor2[0]][coor2[1]];
@@ -855,17 +865,5 @@ class UIHandler {
 
 function main() {
   let state = new State();
-  let drawer = new UIHandler(state, [8, 8], "#8b6914", "#deb887");
-
-  // Switch Sides handler
-  document.getElementById('switch').addEventListener('click', function() {
-    if(drawer.highlighted_square[0] === null) {
-      drawer.state.flip_board(); drawer.draw_pieces();
-    } else {
-      alert('Cannot switch sides mid-move!');
-      drawer.unhighlight();
-    }
-  }, false);
-  document.getElementById('reset').addEventListener('click', function() { drawer.reset(); }, false);
-  document.getElementById('undo').addEventListener('click', function() { drawer.undo(); drawer.unhighlight(); }, false);
+  let drawer = new UIHandler(state);
 }
