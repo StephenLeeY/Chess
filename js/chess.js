@@ -687,14 +687,7 @@ class UIHandler {
 
           // Move history logic
           if(code !== false) {
-            if(_this.history.length > _this.turn_num + 1) {
-              _this.history = _this.history.splice(0, _this.turn_num + 1);
-            }
-            _this.history.push(_this.state.deep_copy());
-            _this.turn_num += 1;
-
             _this.draw_pieces();
-
             if(code === 'Checkmate') _this.state.checkmate_handler();
           }
 
