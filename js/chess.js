@@ -1,12 +1,11 @@
 // TODO:
-// 1. Post pawn promotion square piece does not have onclick. But only the latest promoted piece is effected.
-
-const utility = new JavascriptToolbox();
+// 1. Bug - Promoted piece is highlighted.
 
 class AI {
   constructor(game, player) {
     this.game = game;
     this.player = player;
+    this.utility = new JavascriptToolbox();
   }
 
   evaluate_state() {
@@ -19,8 +18,9 @@ class AI {
     return random_move;
   }
 
-  make_move() {
+  async make_move() {
     if(this.game.ptm === this.player) {
+      // await this.utility.sleep(1000);
       return this.random_bot(this.game);
     } else {
       throw new Error('AI asked to make move on opponent\'s turn.');
@@ -38,6 +38,7 @@ class State {
 
   constructor() {
     this.board = this.init_board();
+    this.utility = new JavascriptToolbox();
   }
 
   // Return set of valid states and their respective actions
@@ -162,7 +163,7 @@ class State {
       // Castling - King
       else if(piece1.type === 'King') {
         // Left Castle
-        if(_this.castle_info['Left'][0] && utility.arrays_equal(_this.castle_info['Left'][1], coor2)) {
+        if(_this.castle_info['Left'][0] && _this.utility.arrays_equal(_this.castle_info['Left'][1], coor2)) {
           const king_dest = _this.castle_info['Left'][1];
           const rook = _this.board[king_dest[0]][0];
           _this.board[king_dest[0]][3] = rook;
@@ -170,7 +171,7 @@ class State {
           _this.castle_info['Left'] = [false, [-1, -1]];
         }
         // Right Castle
-        else if(_this.castle_info['Right'][0] && utility.arrays_equal(_this.castle_info['Right'][1], coor2)) {
+        else if(_this.castle_info['Right'][0] && _this.utility.arrays_equal(_this.castle_info['Right'][1], coor2)) {
           const king_dest = _this.castle_info['Right'][1];
           const rook = _this.board[king_dest[0]][_this.board.length - 1];
           _this.board[king_dest[0]][_this.board.length - 3] = rook;
@@ -225,7 +226,7 @@ class State {
     if(piece1.color === this.ptm) {
       // Validity check
       const valid_moveset = this.get_legal_moves(coor1, is_simulation);
-      if(!valid_moveset.find(ele => utility.arrays_equal(ele, coor2))) return false;
+      if(!valid_moveset.find(ele => this.utility.arrays_equal(ele, coor2))) return false;
 
       // Legality check
       if(!is_simulation) if(!this.is_legal_move(coor1, coor2)) return false;
@@ -265,6 +266,7 @@ class State {
       // End of turn logic
       this.ptm = (this.ptm === "White") ? "Black" : "White";
       this.move_history.push([[piece1, coor1], [piece2, coor2]]);
+      this.delayed_moves = [];
 
       // Endgame detection & handler
       return endgame_handler();
@@ -281,7 +283,7 @@ class State {
 
     function valid_moveset_handler(trans) {
       return function(trans) {
-        const trans_coor = utility.array_add(trans, coor);
+        const trans_coor = _this.utility.array_add(trans, coor);
         if(trans_coor[0] >= 0 && trans_coor[0] < _this.board.length &&
            trans_coor[1] >= 0 && trans_coor[1] < _this.board[0].length &&
            _this.board[trans_coor[0]][trans_coor[1]].color !== piece.color) {
@@ -417,7 +419,7 @@ class State {
       let return_moveset = [];
 
       if(_this.castle_avail[piece.color][0]) {
-        king_dest = utility.array_add(castle_moveset[0], coor);
+        king_dest = _this.utility.array_add(castle_moveset[0], coor);
         for(let i = coor[1] - 1; i >= 1; i--) {
           check_piece = _this.board[king_dest[0]][i];
           if(check_piece.type !== "Empty" || check_piece.color !== "None" ||
@@ -431,7 +433,7 @@ class State {
       }
       king_dest = undefined, check_piece = undefined, castle_ready = true;
       if(_this.castle_avail[piece.color][1]) {
-        king_dest = utility.array_add(castle_moveset[1], coor);
+        king_dest = _this.utility.array_add(castle_moveset[1], coor);
         for(let i = coor[1] + 1; i <= _this.board.length - 2; i++) {
           check_piece = _this.board[king_dest[0]][i];
           if(check_piece.type !== "Empty" || check_piece.color !== "None" ||
@@ -520,7 +522,7 @@ class State {
       for(let x = 0; x < this.board[0].length; x++) {
         const check_piece = this.board[y][x];
         if(check_piece.type !== "Empty" && check_piece.color !== color) {
-          if(this.get_legal_moves([y, x], true).find(loc => utility.arrays_equal(loc, coor))) {
+          if(this.get_legal_moves([y, x], true).find(loc => this.utility.arrays_equal(loc, coor))) {
             return true;
           }
         }
@@ -660,11 +662,11 @@ class UIHandler {
 
   // Remove click event handlers for everything except the promotion UI
   // TODO: If possible, find a better method of doing this.
-  disable_board() {
+  disable_board(skip_spot) {
     for(let y = 0; y < this.board_dims[0]; y++) {
       for(let x = 0; x < this.board_dims[1]; x++) {
         const square = this.board_div.children[y].children[x];
-        if(!(square.children.length > 0 && square.children[0].className === 'promotionUI')) {
+        if(y != skip_spot[0] || x != skip_spot[1]) {
           const square_clone = square.cloneNode(true);
           square.parentNode.replaceChild(square_clone, square);
         }
@@ -673,12 +675,12 @@ class UIHandler {
   }
 
   // Add click event handlers to everything again.
-  enable_board() {
+  enable_board(skip_spot) {
     const _this = this;
     for(let y = 0; y < this.board_dims[0]; y++) {
       for(let x = 0; x < this.board_dims[1]; x++) {
         const square = this.board_div.children[y].children[x];
-        if(!(square.children.length > 0 && square.children[0].className === 'promotionUI')) {
+        if(y != skip_spot[0] || x != skip_spot[1]) {
           square.addEventListener('click', async function() {
             if(_this.move_click_handler(square) === 'Finished') {
               const move = await _this.ai.make_move();
@@ -741,6 +743,13 @@ class UIHandler {
 
           // Move history logic
           if(code !== false) {
+            // Move history logic
+            if(_this.history.length > _this.turn_num + 1) {
+              _this.history = _this.history.splice(0, _this.turn_num + 1);
+            }
+            _this.history.push(_this.state.deep_copy());
+            _this.turn_num += 1;
+
             _this.draw_pieces();
             if(code === 'Checkmate') _this.state.checkmate_handler();
           }
@@ -755,7 +764,7 @@ class UIHandler {
           }
 
           // Fix board
-          _this.enable_board();
+          _this.enable_board(target_spot);
           square.style.zIndex = undefined;
 
           const move = await _this.ai.make_move();
@@ -786,7 +795,7 @@ class UIHandler {
     this.highlighted_square[0].className = this.highlighted_square[1];
     this.highlighted_square = [null, ""];
 
-    this.disable_board();
+    this.disable_board(coor2);
     return 'Promoted';
   }
 
