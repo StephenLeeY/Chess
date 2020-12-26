@@ -1,7 +1,32 @@
 // TODO:
-// 1. Random moves AI
+// 1. Post pawn promotion square piece does not have onclick. But only the latest promoted piece is effected.
 
 const utility = new JavascriptToolbox();
+
+class AI {
+  constructor(game, player) {
+    this.game = game;
+    this.player = player;
+  }
+
+  evaluate_state() {
+    return 1;
+  }
+
+  random_bot(state) {
+    const legal_moves = state.ai_branch(state);
+    const random_move = legal_moves[Math.floor(Math.random() * legal_moves.length)];
+    return random_move;
+  }
+
+  make_move() {
+    if(this.game.ptm === this.player) {
+      return this.random_bot(this.game);
+    } else {
+      throw new Error('AI asked to make move on opponent\'s turn.');
+    }
+  }
+}
 
 class State {
   ptm = "White";
@@ -15,8 +40,28 @@ class State {
     this.board = this.init_board();
   }
 
+  // Return set of valid states and their respective actions
+  ai_branch(state) {
+    let valid_moves = [];
+    for(let y = 0; y < state.board.length; y++) {
+      for(let x = 0; x < state.board[0].length; x++) {
+        const piece = state.board[y][x];
+        if(piece.type !== 'Empty' && piece.color === state.ptm) {
+          const legal_moves = state.get_legal_moves([y, x]);
+          for(let move of legal_moves) {
+            let new_state = state.deep_copy();
+            if(move !== undefined) {
+              if(new_state.move_piece([y, x], move) !== false) valid_moves.push([[y, x], move]);
+            }
+          }
+        }
+      }
+    }
+    return valid_moves;
+  }
+
   checkmate_handler() {
-    alert(`Checkmate! Winner is ${this.ptm}.`);
+    alert(`Checkmate! Winner is ${(this.ptm === 'White') ? 'Black' : 'White'}.`);
   }
 
   deep_copy() {
@@ -81,7 +126,9 @@ class State {
     this.board = this.init_board();
     this.ptm = "White";
     this.move_history = [];
-    this.castle_avail = [[true, true], [true, true]];
+    this.delayed_moves = [];
+    this.castle_avail = {'White' : [true, true], 'Black' : [true, true]};
+    this.castle_info = {'Left' : [false, [-1, -1]], 'Right' : [false, [-1, -1]]};
 
     if(this.orientation === "Black") {
       this.flip_board();
@@ -99,7 +146,7 @@ class State {
     return counter;
   }
 
-  move_piece(coor1, coor2, is_simulation, ignore_pawn_promotion=false) {
+  move_piece(coor1, coor2, is_simulation=false, ignore_pawn_promotion=false) {
     const piece1 = this.board[coor1[0]][coor1[1]];
     const piece2 = this.board[coor2[0]][coor2[1]];
     const _this = this;
@@ -130,8 +177,7 @@ class State {
           _this.board[king_dest[0]][_this.board.length - 1] = new Piece("Empty", "None");
           _this.castle_info['Right'] = [false, [-1, -1]];
         }
-        const change_index = (piece1.color === "White") ? 0 : 1;
-        _this.castle_avail[change_index] = [false, false];
+        _this.castle_avail[piece1.color] = [false, false];
       }
     }
 
@@ -204,6 +250,7 @@ class State {
         }
       }
 
+      if(!is_simulation && piece2 === undefined) console.log(coor2);
       // Move Handler
       if(piece2.type === "Empty" && piece2.color === "None") {
         this.board[coor2[0]][coor2[1]] = piece1;
@@ -226,7 +273,7 @@ class State {
 
   // Checks if move is within piece's possible movesets
   // valid_moveset is in format: (y, x)
-  get_legal_moves(coor, is_simulation) {
+  get_legal_moves(coor, is_simulation=false) {
     let piece = this.board[coor[0]][coor[1]];
     let valid_moveset = [];
     const _this = this;
@@ -520,7 +567,7 @@ class Piece {
 }
 
 class UIHandler {
-  constructor(state, dark_color, light_color) {
+  constructor(state, ai) {
     const _this = this;
 
     function calc_square_size() {
@@ -545,6 +592,7 @@ class UIHandler {
     this.indicated_squares = [];
     this.history = [this.state.deep_copy()];
     this.turn_num = 0;
+    this.ai = ai;
 
     this.draw_board();
     this.draw_pieces();
@@ -630,9 +678,15 @@ class UIHandler {
     for(let y = 0; y < this.board_dims[0]; y++) {
       for(let x = 0; x < this.board_dims[1]; x++) {
         const square = this.board_div.children[y].children[x];
-        square.addEventListener('click', function() {
-          _this.move_click_handler(square);
-        }, false);
+        if(!(square.children.length > 0 && square.children[0].className === 'promotionUI')) {
+          square.addEventListener('click', async function() {
+            if(_this.move_click_handler(square) === 'Finished') {
+              const move = await _this.ai.make_move();
+              _this.move_click_handler(_this.board_div.children[move[0][0]].children[move[0][1]]);
+              _this.move_click_handler(_this.board_div.children[move[1][0]].children[move[1][1]]);
+            }
+          }, false);
+        }
       }
     }
   }
@@ -666,7 +720,7 @@ class UIHandler {
 
       const _this = this;
       promotion_square.addEventListener('click',
-        function() {
+        async function() {
           // Update pieces
           const promote_piece_info = promotion_square.firstChild.id.split(",");
           const target_spot = square.id.split(",");
@@ -702,7 +756,11 @@ class UIHandler {
 
           // Fix board
           _this.enable_board();
-          square.style.zIndex = '0';
+          square.style.zIndex = undefined;
+
+          const move = await _this.ai.make_move();
+          _this.move_click_handler(_this.board_div.children[move[0][0]].children[move[0][1]]);
+          _this.move_click_handler(_this.board_div.children[move[1][0]].children[move[1][1]]);
         });
 
       let promotion_piece = document.createElement("img");
@@ -771,6 +829,8 @@ class UIHandler {
         ${piece.color} ${piece.type} to\
         ${String.fromCharCode(parseInt(coor2[1]) + 65)}` +
         `${parseInt(8 - coor2[0])}\n`;
+
+        return 'Finished';
       }
     } else if(square.children.length > 0) {
       // Store highlighted square information
@@ -786,6 +846,7 @@ class UIHandler {
           this.board_div.children[move[0]].children[move[1]].appendChild(this.create_indicator());
         }
       }
+      return 'Selected';
     }
   }
 
@@ -802,8 +863,12 @@ class UIHandler {
         square.style.height = this.square_size + "px";
 
         const _this = this;
-        square.addEventListener('click', function() {
-          _this.move_click_handler(square);
+        square.addEventListener('click', async function() {
+          if(_this.move_click_handler(square) === 'Finished') {
+            const move = await _this.ai.make_move();
+            _this.move_click_handler(_this.board_div.children[move[0][0]].children[move[0][1]]);
+            _this.move_click_handler(_this.board_div.children[move[1][0]].children[move[1][1]]);
+          }
         }, false);
 
         row.appendChild(square);
@@ -856,7 +921,12 @@ class UIHandler {
   }
 }
 
+let state = undefined;
+let ai = undefined;
+let drawer = undefined;
+
 function main() {
-  let state = new State();
-  let drawer = new UIHandler(state);
+  state = new State();
+  ai = new AI(state, (state.orientation === 'White') ? 'Black' : 'White');
+  drawer = new UIHandler(state, ai);
 }

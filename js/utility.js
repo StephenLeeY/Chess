@@ -26,4 +26,8 @@ class JavascriptToolbox {
     }
     return arr3;
   }
+
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
 }
