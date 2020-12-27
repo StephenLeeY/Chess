@@ -1,27 +1,57 @@
 // TODO:
-// 1. Bug - Promoted piece is highlighted.
+// 1. Bug - Promoted piece is highlighted. Likely because of multiple event listeners? Maybe not?
 
 class AI {
   constructor(game, player) {
     this.game = game;
     this.player = player;
     this.utility = new JavascriptToolbox();
+
+    this.piece_values = {'Pawn' : 1, 'Rook' : 5, 'Bishop' : 3, 'Knight' : 3, 'Queen' : 9, 'King' : 0};
   }
 
-  evaluate_state() {
-    return 1;
+  evaluate_state(state) {
+    let score = 0;
+    for(let y = 0; y < state.board.length; y++) {
+      for(let x = 0; x < state.board[0].length; x++) {
+        const piece = state.board[y][x];
+        if(piece.color !== 'None') {
+          const piece_multiplier = (piece.color !== this.player) ? -1 : 1;
+          score += piece_multiplier * this.piece_values[piece.type];
+        }
+      }
+    }
+    return score;
   }
 
-  random_bot(state) {
+  greedy_bot(state) {
     const legal_moves = state.ai_branch(state);
-    const random_move = legal_moves[Math.floor(Math.random() * legal_moves.length)];
-    return random_move;
+    const base_value = this.evaluate_state(this.game);
+
+    if(legal_moves.length !== 0) {
+      let best_value = Number.NEGATIVE_INFINITY;
+      let best_move = null;
+
+      for(let move of legal_moves) {
+        const next_state = this.game.simulate_move(move[0], move[1]);
+        const curr_value = this.evaluate_state(next_state);
+        if(curr_value > best_value) {
+          best_value = curr_value;
+          best_move = move;
+        }
+      }
+
+      if(base_value === best_value) return legal_moves[Math.floor(Math.random() * legal_moves.length)];
+      return best_move;
+    } else {
+      return 'No valid moves';
+    }
   }
 
   async make_move() {
     if(this.game.ptm === this.player) {
       // await this.utility.sleep(1000);
-      return this.random_bot(this.game);
+      return this.greedy_bot(this.game);
     } else {
       throw new Error('AI asked to make move on opponent\'s turn.');
     }
@@ -41,6 +71,17 @@ class State {
     this.utility = new JavascriptToolbox();
   }
 
+  simulate_move(coor1, coor2) {
+    if(coor1 !== undefined && coor2 !== undefined) {
+      let simulation = this.deep_copy();
+      if(simulation.move_piece(coor1, coor2) !== false) {
+        return simulation;
+      } else {
+        return 'Bad Move';
+      }
+    }
+  }
+
   // Return set of valid states and their respective actions
   ai_branch(state) {
     let valid_moves = [];
@@ -50,9 +91,9 @@ class State {
         if(piece.type !== 'Empty' && piece.color === state.ptm) {
           const legal_moves = state.get_legal_moves([y, x]);
           for(let move of legal_moves) {
-            let new_state = state.deep_copy();
             if(move !== undefined) {
-              if(new_state.move_piece([y, x], move) !== false) valid_moves.push([[y, x], move]);
+              const simulation_code = this.simulate_move([y, x], move);
+              if(simulation_code !== 'Bad Move') valid_moves.push([[y, x], move]);
             }
           }
         }
@@ -662,38 +703,40 @@ class UIHandler {
 
   // Remove click event handlers for everything except the promotion UI
   // TODO: If possible, find a better method of doing this.
-  disable_board(skip_spot) {
+  disable_board() {
     for(let y = 0; y < this.board_dims[0]; y++) {
       for(let x = 0; x < this.board_dims[1]; x++) {
         const square = this.board_div.children[y].children[x];
-        if(y != skip_spot[0] || x != skip_spot[1]) {
-          const square_clone = square.cloneNode(true);
-          square.parentNode.replaceChild(square_clone, square);
-        }
+        const square_clone = square.cloneNode(true);
+        square.parentNode.replaceChild(square_clone, square);
       }
     }
   }
 
   // Add click event handlers to everything again.
-  enable_board(skip_spot) {
+  enable_board() {
     const _this = this;
     for(let y = 0; y < this.board_dims[0]; y++) {
       for(let x = 0; x < this.board_dims[1]; x++) {
         const square = this.board_div.children[y].children[x];
-        if(y != skip_spot[0] || x != skip_spot[1]) {
-          square.addEventListener('click', async function() {
-            if(_this.move_click_handler(square) === 'Finished') {
-              const move = await _this.ai.make_move();
+        square.addEventListener('click', async function() {
+          if(_this.move_click_handler(square) === 'Finished') {
+            const move = await _this.ai.make_move();
+            if(move !== 'No valid moves') {
               _this.move_click_handler(_this.board_div.children[move[0][0]].children[move[0][1]]);
               _this.move_click_handler(_this.board_div.children[move[1][0]].children[move[1][1]]);
             }
-          }, false);
-        }
+          }
+        }, false);
       }
     }
   }
 
-  promotion_handler(square, coor1, coor2, move_history_len) {
+  promotion_handler(coor1, coor2, move_history_len) {
+    // Dereference all board squares and update 'square' variable reference
+    this.disable_board();
+    let square = this.board_div.children[coor2[0]].children[coor2[1]];
+
     // Save and remove piece on promotion square
     const previous_piece = this.state.board[coor2[0]][coor2[1]].deep_copy();
     square.removeChild(square.lastChild);
@@ -764,12 +807,14 @@ class UIHandler {
           }
 
           // Fix board
-          _this.enable_board(target_spot);
+          _this.enable_board();
           square.style.zIndex = undefined;
 
           const move = await _this.ai.make_move();
-          _this.move_click_handler(_this.board_div.children[move[0][0]].children[move[0][1]]);
-          _this.move_click_handler(_this.board_div.children[move[1][0]].children[move[1][1]]);
+          if(move !== 'No valid moves') {
+            _this.move_click_handler(_this.board_div.children[move[0][0]].children[move[0][1]]);
+            _this.move_click_handler(_this.board_div.children[move[1][0]].children[move[1][1]]);
+          }
         });
 
       let promotion_piece = document.createElement("img");
@@ -792,10 +837,11 @@ class UIHandler {
     square.appendChild(promotion_ui);
 
     // Unhighlight square
-    this.highlighted_square[0].className = this.highlighted_square[1];
+    const highlight_coor = this.highlighted_square[0].id.split(',');
+    const highlighted_square = this.board_div.children[highlight_coor[0]].children[highlight_coor[1]];
+    highlighted_square.className = this.highlighted_square[1];
     this.highlighted_square = [null, ""];
 
-    this.disable_board(coor2);
     return 'Promoted';
   }
 
@@ -809,7 +855,7 @@ class UIHandler {
 
       // Pawn promotion logic
       if(code === 'Promotion') {
-        return this.promotion_handler(square, coor1, coor2, move_history_len);
+        return this.promotion_handler(coor1, coor2, move_history_len);
       }
 
       // Move history logic
@@ -875,8 +921,10 @@ class UIHandler {
         square.addEventListener('click', async function() {
           if(_this.move_click_handler(square) === 'Finished') {
             const move = await _this.ai.make_move();
-            _this.move_click_handler(_this.board_div.children[move[0][0]].children[move[0][1]]);
-            _this.move_click_handler(_this.board_div.children[move[1][0]].children[move[1][1]]);
+            if(move !== 'No valid moves') {
+              _this.move_click_handler(_this.board_div.children[move[0][0]].children[move[0][1]]);
+              _this.move_click_handler(_this.board_div.children[move[1][0]].children[move[1][1]]);
+            }
           }
         }, false);
 
