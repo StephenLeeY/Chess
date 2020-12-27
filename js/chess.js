@@ -1,6 +1,6 @@
 // TODO:
-// 1. Bug - Promoted piece is highlighted. Likely because of multiple event listeners? Maybe not?
-// 2. Issue - Moves are taking way too long. Reduce for loops probably?
+// 1. Bug - Promoted piece is highlighted. Hacky fix, figure out real reason later?
+// 2. REFORMAT AND IMPROVE ALL CODE STARTING NOW!
 
 class AI {
   constructor(game, player) {
@@ -66,6 +66,9 @@ class AI {
         }
       }
       return this.branch_out(next_branches, depth - 1);
+    } else if(branches.length === 1) {
+      const legal_moves = state.ai_branch(state);
+      return legal_moves[Math.floor(Math.random() * legal_moves.length)];
     } else {
       let best_value = Number.NEGATIVE_INFINITY;
       let best_move = null;
@@ -84,7 +87,7 @@ class AI {
 
   async make_move() {
     if(this.game.ptm === this.player) {
-      const result = this.branch_out([[this.game, []]], 1);
+      const result = this.branch_out([[this.game, []]], 0);
       return result;
     } else {
       throw new Error('AI asked to make move on opponent\'s turn.');
@@ -669,6 +672,7 @@ class UIHandler {
     this.indicated_squares = [];
     this.history = [this.state.deep_copy()];
     this.turn_num = 0;
+    this.promoted = false;
     this.ai = ai;
 
     this.draw_board();
@@ -845,6 +849,8 @@ class UIHandler {
           const move = await _this.ai.make_move();
           await _this.move_click_handler(_this.board_div.children[move[0][0]].children[move[0][1]]);
           await _this.move_click_handler(_this.board_div.children[move[1][0]].children[move[1][1]]);
+
+          _this.promoted = true;
         });
 
       let promotion_piece = document.createElement("img");
@@ -876,6 +882,10 @@ class UIHandler {
   }
 
   move_click_handler(square) {
+    if(this.promoted) {
+      this.promoted = false;
+      return;
+    }
     if(this.highlighted_square[0] !== null) {
       // Move piece
       const coor1 = this.highlighted_square[0].id.split(",");
