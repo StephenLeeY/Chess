@@ -1,5 +1,6 @@
 // TODO:
 // 1. Bug - Promoted piece is highlighted. Likely because of multiple event listeners? Maybe not?
+// 2. Issue - Moves are taking way too long. Reduce for loops probably?
 
 class AI {
   constructor(game, player) {
@@ -33,7 +34,7 @@ class AI {
       let best_move = null;
 
       for(let move of legal_moves) {
-        const next_state = this.game.simulate_move(move[0], move[1]);
+        const next_state = state.simulate_move(move[0], move[1]);
         const curr_value = this.evaluate_state(next_state);
         if(curr_value > best_value) {
           best_value = curr_value;
@@ -41,17 +42,50 @@ class AI {
         }
       }
 
-      if(base_value === best_value) return legal_moves[Math.floor(Math.random() * legal_moves.length)];
-      return best_move;
+      if(base_value === best_value) {
+        return [legal_moves[Math.floor(Math.random() * legal_moves.length)], best_value];
+      } else {
+        return [best_move, best_value];
+      }
     } else {
-      return 'No valid moves';
+      return [null, (state.ptm === this.player) ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY];
+    }
+  }
+
+  branch_out(branches, depth) {
+    if(depth > 0) {
+      let next_branches = [];
+      for(let node of branches) {
+        const state = node[0];
+        let path = node[1];
+        const legal_moves = state.ai_branch(state);
+
+        for(let move of legal_moves) {
+          const next_state = state.simulate_move(move[0], move[1]);
+          next_branches.push([next_state, path.concat([[move]])]);
+        }
+      }
+      return this.branch_out(next_branches, depth - 1);
+    } else {
+      let best_value = Number.NEGATIVE_INFINITY;
+      let best_move = null;
+      for(let node of branches) {
+        const state = node[0];
+        let path = node[1];
+        const ai_result = this.greedy_bot(state);
+        if(ai_result[1] > best_value) {
+          best_value = ai_result[1];
+          best_move = path[0];
+        }
+      }
+      return best_move[0];
     }
   }
 
   async make_move() {
     if(this.game.ptm === this.player) {
-      // await this.utility.sleep(1000);
-      return this.greedy_bot(this.game);
+      const result = this.branch_out([[this.game, []]], 1);
+      return result;
     } else {
       throw new Error('AI asked to make move on opponent\'s turn.');
     }
@@ -722,10 +756,8 @@ class UIHandler {
         square.addEventListener('click', async function() {
           if(_this.move_click_handler(square) === 'Finished') {
             const move = await _this.ai.make_move();
-            if(move !== 'No valid moves') {
-              _this.move_click_handler(_this.board_div.children[move[0][0]].children[move[0][1]]);
-              _this.move_click_handler(_this.board_div.children[move[1][0]].children[move[1][1]]);
-            }
+            await _this.move_click_handler(_this.board_div.children[move[0][0]].children[move[0][1]]);
+            await _this.move_click_handler(_this.board_div.children[move[1][0]].children[move[1][1]]);
           }
         }, false);
       }
@@ -811,10 +843,8 @@ class UIHandler {
           square.style.zIndex = undefined;
 
           const move = await _this.ai.make_move();
-          if(move !== 'No valid moves') {
-            _this.move_click_handler(_this.board_div.children[move[0][0]].children[move[0][1]]);
-            _this.move_click_handler(_this.board_div.children[move[1][0]].children[move[1][1]]);
-          }
+          await _this.move_click_handler(_this.board_div.children[move[0][0]].children[move[0][1]]);
+          await _this.move_click_handler(_this.board_div.children[move[1][0]].children[move[1][1]]);
         });
 
       let promotion_piece = document.createElement("img");
@@ -921,10 +951,8 @@ class UIHandler {
         square.addEventListener('click', async function() {
           if(_this.move_click_handler(square) === 'Finished') {
             const move = await _this.ai.make_move();
-            if(move !== 'No valid moves') {
-              _this.move_click_handler(_this.board_div.children[move[0][0]].children[move[0][1]]);
-              _this.move_click_handler(_this.board_div.children[move[1][0]].children[move[1][1]]);
-            }
+            await _this.move_click_handler(_this.board_div.children[move[0][0]].children[move[0][1]])
+            await _this.move_click_handler(_this.board_div.children[move[1][0]].children[move[1][1]])
           }
         }, false);
 
