@@ -1,5 +1,9 @@
 # <b>Learning Project:</b> Chess webapp
 
+<h3>
+  Try out the game <a href="https://stephenleey.github.io/Chess/">here</a>!
+</h3>
+
 <h2>December 25th, 2020</h2>
 Finished base game, which I was unable to do before due to very messy code. There are likely going to be small bugs which should be trivial to fix once found. Getting started on implementing a very basic, dumb AI first. A smarter AI will depend on how costly a simulation is for this Chess implementation.
 
